@@ -233,7 +233,7 @@ const App: React.FC = () => {
         />
       </div>
 
-      <div className="fixed inset-0 opacity-[0.02] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
+      <div className="fixed inset-0 opacity-[0.02] pointer-events-none bg-[url('/noise.svg')]"></div>
 
       <div className={`relative z-10 max-w-7xl mx-auto px-6 py-12 flex flex-col min-h-screen ${isDistorted ? 'glitch-active' : ''}`}>
         <motion.header
