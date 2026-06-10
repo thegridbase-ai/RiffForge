@@ -136,20 +136,18 @@ export const ChordCard: React.FC<ChordCardProps> = ({
         </motion.span>
 
         {/* Main Clickable Area */}
-        <button
-          type="button"
+        {/* Main clickable area: div (not button) so the nested lock/play buttons stay valid */}
+        <div
           onClick={(e) => {
             const target = e.target as HTMLElement;
-            const lockButton = target.closest('button[aria-label="Lock as main chord"]') ||
-                              target.closest('div[class*="z-\\[999999\\]"]');
-            if (lockButton) {
+            const innerButton = target.closest('button');
+            if (innerButton) {
               e.stopPropagation();
-              e.preventDefault();
               return;
             }
             onPlay(chord);
           }}
-          className="relative z-10 w-full text-left flex-1 flex flex-col"
+          className="relative z-10 w-full text-left flex-1 flex flex-col cursor-pointer"
           style={{ pointerEvents: 'auto' }}
         >
           <div className="relative z-10 w-full">
@@ -177,7 +175,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 <AnimatePresence mode="wait">
                   <motion.p
                     key={chord.subtext}
-                    className="font-['Share_Tech_Mono'] text-xs text-neutral-500 mb-4 tracking-wider"
+                    className="font-['Share_Tech_Mono'] text-xs text-neutral-400 mb-4 tracking-wider"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -287,8 +285,14 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 {chord.description}
               </p>
 
-              {/* Play Icon - Animated */}
-              <motion.div
+              {/* Play Button - Animated */}
+              <motion.button
+                type="button"
+                aria-label={`Play ${chord.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPlay(chord);
+                }}
                 className={`
                   shrink-0 w-8 h-8 flex items-center justify-center rounded-full border
                   ${isDistorted ? 'border-rose-900 text-rose-500' : 'border-neutral-700 text-neutral-500'}
@@ -305,13 +309,13 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
-              </motion.div>
+              </motion.button>
             </div>
           </div>
 
           {/* Fretboard Data */}
           <div className="relative z-10 w-full pt-3 border-t border-white/5 flex justify-between items-center mt-auto">
-            <span className="font-mono text-[10px] text-neutral-600 opacity-60">TABLATURE</span>
+            <span className="font-mono text-[10px] text-neutral-400">TABLATURE</span>
             <motion.span
               className={`font-mono text-sm tracking-[0.25em] font-bold ${
                 isDistorted
@@ -331,7 +335,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
               {chord.fretboard}
             </motion.span>
           </div>
-        </button>
+        </div>
       </motion.div>
     </motion.div>
   );

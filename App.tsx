@@ -285,10 +285,10 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center mt-4 px-2 md:px-4 max-w-lg mx-auto">
               <div className="flex items-center gap-2">
                 <div className={`w-1.5 h-1.5 rounded-full ${isAudioReady ? 'bg-green-500 shadow-[0_0_5px_lime]' : 'bg-red-900'}`}></div>
-                <span className="text-[10px] font-mono text-neutral-600 uppercase">Engine {isAudioReady ? 'Online' : 'Standby'}</span>
+                <span className="text-[10px] font-mono text-neutral-400 uppercase">Engine {isAudioReady ? 'Online' : 'Standby'}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-neutral-600 uppercase">Output</span>
+                <span className="text-[10px] font-mono text-neutral-400 uppercase">Output</span>
                 <div className="flex gap-0.5">
                   {[1,2,3,4,5].map(i => (
                     <div key={i} className={`w-1 h-3 ${isDistorted ? 'bg-rose-900' : 'bg-cyan-900'} ${i < 4 ? (isDistorted ? 'bg-rose-500' : 'bg-cyan-500') : ''}`}></div>
@@ -480,7 +480,7 @@ const App: React.FC = () => {
           transition={{ delay: 0.8 }}
         >
           <motion.p
-            className="text-neutral-600 text-xs font-mono"
+            className="text-neutral-400 text-xs font-mono"
             whileHover={{ color: isDistorted ? '#f43f5e' : '#22d3ee' }}
           >
             DESIGNED FOR METAL ARCHITECTS // V0.2.3 BETA

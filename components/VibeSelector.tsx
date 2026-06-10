@@ -25,7 +25,7 @@ export const VibeSelector: React.FC<VibeSelectorProps> = ({ vibe, setVibe, isDis
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-xs font-bold transition-all duration-200
             ${vibe === VibeMode.DARK
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
-              : `text-neutral-600 hover:text-neutral-400 border border-transparent`
+              : `text-neutral-400 hover:text-neutral-200 border border-transparent`
             }
           `}
         >
@@ -42,7 +42,7 @@ export const VibeSelector: React.FC<VibeSelectorProps> = ({ vibe, setVibe, isDis
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-xs font-bold transition-all duration-200
             ${vibe === VibeMode.MELODIC
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
-              : `text-neutral-600 hover:text-neutral-400 border border-transparent`
+              : `text-neutral-400 hover:text-neutral-200 border border-transparent`
             }
           `}
         >
@@ -59,7 +59,7 @@ export const VibeSelector: React.FC<VibeSelectorProps> = ({ vibe, setVibe, isDis
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-xs font-bold transition-all duration-200
             ${vibe === VibeMode.ENERGETIC
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
-              : `text-neutral-600 hover:text-neutral-400 border border-transparent`
+              : `text-neutral-400 hover:text-neutral-200 border border-transparent`
             }
           `}
         >
