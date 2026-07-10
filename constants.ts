@@ -73,5 +73,3 @@ export const getChords = async (tuning: TuningMode, vibe: VibeMode): Promise<Cho
   CHORD_LIBRARY[tuning][vibe] = chords;
   return chords;
 };
-
-export const CHORDS: Chord[] = [];

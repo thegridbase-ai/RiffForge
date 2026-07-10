@@ -14,7 +14,6 @@ interface ChordStore {
 
   // Lock state
   lockedChordId: string | null;
-  lastDisplayedParentId: string | null;
   relatedChords: Chord[];
 
   // Loading state
@@ -31,7 +30,6 @@ interface ChordStore {
   setTuningMode: (mode: TuningMode) => void;
   setVibeMode: (mode: VibeMode) => void;
   setLockedChordId: (id: string | null) => void;
-  setLastDisplayedParentId: (id: string | null) => void;
   setRelatedChords: (chords: Chord[]) => void;
   setDisplayedChords: (chords: Chord[]) => void;
   setIsLoadingChords: (value: boolean) => void;
@@ -52,7 +50,6 @@ export const useChordStore = create<ChordStore>((set) => ({
   tuningMode: TuningMode.STANDARD,
   vibeMode: VibeMode.MELODIC,
   lockedChordId: null,
-  lastDisplayedParentId: null,
   relatedChords: [],
   displayedChords: [],
   isLoadingChords: false,
@@ -67,7 +64,6 @@ export const useChordStore = create<ChordStore>((set) => ({
   setTuningMode: (mode) => set({ tuningMode: mode }),
   setVibeMode: (mode) => set({ vibeMode: mode }),
   setLockedChordId: (id) => set({ lockedChordId: id }),
-  setLastDisplayedParentId: (id) => set({ lastDisplayedParentId: id }),
   setRelatedChords: (chords) => set({ relatedChords: chords }),
   setDisplayedChords: (chords) => set({ displayedChords: chords }),
   setIsLoadingChords: (value) => set({ isLoadingChords: value }),
@@ -77,7 +73,6 @@ export const useChordStore = create<ChordStore>((set) => ({
   // Compound actions
   resetLockState: () => set({
     lockedChordId: null,
-    lastDisplayedParentId: null,
     relatedChords: []
   }),
   incrementChordsToLoad: (amount) => set((state) => ({

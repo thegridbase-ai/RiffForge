@@ -9,7 +9,7 @@ import { VibeSelector } from './components/VibeSelector';
 import { useChordStore } from './stores/chordStore';
 import { Chord, TuningMode, VibeMode } from './types';
 import { transposeChord } from './utils/musicTheory';
-import { getChords, CHORD_LIBRARY } from './constants';
+import { getChords } from './constants';
 
 const CHORDS_PER_BATCH = 6;
 const RELATED_CHORDS_COUNT = 6;
@@ -35,7 +35,6 @@ const App: React.FC = () => {
     setTuningMode,
     setVibeMode,
     setLockedChordId,
-    setLastDisplayedParentId,
     setRelatedChords,
     setDisplayedChords,
     setIsLoadingChords,
@@ -79,12 +78,10 @@ const App: React.FC = () => {
   const handleLockToggle = useCallback(async (chord: Chord) => {
     if (lockedChordId === chord.id) {
       setLockedChordId(null);
-      setLastDisplayedParentId(null);
       setRelatedChords([]);
     } else {
       await playChord(chord);
       setLockedChordId(chord.id);
-      setLastDisplayedParentId(chord.id);
 
       const baseChords = await getChords(tuningMode, vibeMode);
 
@@ -109,7 +106,7 @@ const App: React.FC = () => {
         setRelatedChords([]);
       }
     }
-  }, [lockedChordId, playChord, selectedRoot, tuningMode, vibeMode, setLockedChordId, setLastDisplayedParentId, setRelatedChords]);
+  }, [lockedChordId, playChord, selectedRoot, tuningMode, vibeMode, setLockedChordId, setRelatedChords]);
 
   const isChordLocked = useCallback((chord: Chord) => {
     if (!lockedChordId) return false;

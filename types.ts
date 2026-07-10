@@ -9,11 +9,6 @@ export interface Chord {
   relatedChords?: Chord[]; // Child chords that harmonically work with this parent
 }
 
-export enum AppMode {
-  CLEAN = 'CLEAN',
-  DIRTY = 'DIRTY'
-}
-
 export enum TuningMode {
   STANDARD = 'STANDARD',
   DROP = 'DROP'
@@ -23,10 +18,4 @@ export enum VibeMode {
   DARK = 'DARK',
   MELODIC = 'MELODIC',
   ENERGETIC = 'ENERGETIC'
-}
-
-export interface AudioState {
-  isInitialized: boolean;
-  isDistorted: boolean;
-  volume: number;
 }
