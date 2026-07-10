@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import { Chord, TuningMode, VibeMode } from '../types';
+import { parseUrlState } from '../utils/urlState';
+
+const urlState = parseUrlState();
 
 interface ChordStore {
   // Audio state
@@ -46,9 +49,9 @@ export const useChordStore = create<ChordStore>((set) => ({
   isDistorted: false,
   isAudioReady: false,
   activeChordId: null,
-  selectedRoot: 'E',
-  tuningMode: TuningMode.STANDARD,
-  vibeMode: VibeMode.MELODIC,
+  selectedRoot: urlState.root ?? 'E',
+  tuningMode: urlState.tuning ?? TuningMode.STANDARD,
+  vibeMode: urlState.vibe ?? VibeMode.MELODIC,
   lockedChordId: null,
   relatedChords: [],
   displayedChords: [],

@@ -9,6 +9,7 @@ import { VibeSelector } from './components/VibeSelector';
 import { useChordStore } from './stores/chordStore';
 import { Chord, TuningMode, VibeMode } from './types';
 import { transposeChord } from './utils/musicTheory';
+import { syncUrlState } from './utils/urlState';
 import { getChords } from './constants';
 
 const CHORDS_PER_BATCH = 6;
@@ -49,6 +50,11 @@ const App: React.FC = () => {
   useEffect(() => {
     resetLockState();
   }, [tuningMode, vibeMode, resetLockState]);
+
+  // Keep the query string shareable: ?root=C&tuning=drop&vibe=dark
+  useEffect(() => {
+    syncUrlState(selectedRoot, tuningMode, vibeMode);
+  }, [selectedRoot, tuningMode, vibeMode]);
 
   const handleUserInteraction = useCallback(async () => {
     if (!isAudioReady) {
