@@ -20,9 +20,14 @@ export const VibeSelector: React.FC<VibeSelectorProps> = ({ vibe, setVibe, isDis
         
         {/* Dark Button */}
         <button
+          type="button"
           onClick={() => setVibe(VibeMode.DARK)}
+          aria-label="Dark vibe"
+          aria-pressed={vibe === VibeMode.DARK}
           className={`
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-xs font-bold transition-all duration-200
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:z-10
+            ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
             ${vibe === VibeMode.DARK
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
               : `text-neutral-400 hover:text-neutral-200 border border-transparent`
@@ -37,9 +42,14 @@ export const VibeSelector: React.FC<VibeSelectorProps> = ({ vibe, setVibe, isDis
 
         {/* Melodic Button */}
         <button
+          type="button"
           onClick={() => setVibe(VibeMode.MELODIC)}
+          aria-label="Melodic vibe"
+          aria-pressed={vibe === VibeMode.MELODIC}
           className={`
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-xs font-bold transition-all duration-200
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:z-10
+            ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
             ${vibe === VibeMode.MELODIC
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
               : `text-neutral-400 hover:text-neutral-200 border border-transparent`
@@ -54,9 +64,14 @@ export const VibeSelector: React.FC<VibeSelectorProps> = ({ vibe, setVibe, isDis
 
         {/* Energetic Button */}
         <button
+          type="button"
           onClick={() => setVibe(VibeMode.ENERGETIC)}
+          aria-label="Energetic vibe"
+          aria-pressed={vibe === VibeMode.ENERGETIC}
           className={`
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-xs font-bold transition-all duration-200
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:z-10
+            ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
             ${vibe === VibeMode.ENERGETIC
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
               : `text-neutral-400 hover:text-neutral-200 border border-transparent`

@@ -32,11 +32,16 @@ export const RootSelector: React.FC<RootSelectorProps> = ({ selectedRoot, onSele
             return (
                 <button
                     key={note}
+                    type="button"
                     onClick={() => onSelectRoot(note)}
+                    aria-label={`Root note ${note}`}
+                    aria-pressed={isSelected}
                     className={`
-                        group relative w-full h-10 md:h-12 flex items-center justify-center 
+                        group relative w-full h-10 md:h-12 flex items-center justify-center
                         font-mono text-sm font-bold transition-all duration-300 overflow-hidden
                         rounded-sm
+                        focus-visible:outline-none focus-visible:ring-2 focus-visible:z-10
+                        ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
                         ${isSelected ? 'active:scale-95' : 'active:scale-[0.98]'}
                     `}
                     style={{

@@ -20,9 +20,14 @@ export const TuningSelector: React.FC<TuningSelectorProps> = ({ tuning, setTunin
         
         {/* Standard Button */}
         <button
+          type="button"
           onClick={() => setTuning(TuningMode.STANDARD)}
+          aria-label="Standard tuning"
+          aria-pressed={tuning === TuningMode.STANDARD}
           className={`
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-sm font-bold transition-all duration-200
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:z-10
+            ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
             ${tuning === TuningMode.STANDARD
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
               : `text-neutral-400 hover:text-neutral-200 border border-transparent`
@@ -37,9 +42,14 @@ export const TuningSelector: React.FC<TuningSelectorProps> = ({ tuning, setTunin
 
         {/* Drop Button */}
         <button
+          type="button"
           onClick={() => setTuning(TuningMode.DROP)}
+          aria-label="Drop tuning"
+          aria-pressed={tuning === TuningMode.DROP}
           className={`
             relative h-10 flex items-center justify-center font-['Oswald'] tracking-widest text-sm font-bold transition-all duration-200
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:z-10
+            ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
             ${tuning === TuningMode.DROP
               ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
               : `text-neutral-400 hover:text-neutral-200 border border-transparent`

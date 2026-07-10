@@ -26,6 +26,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
   skipInitialAnimation = false
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
+  const glowFrameRef = useRef<number | null>(null);
   const [glowPosition, setGlowPosition] = useState({ x: 0, y: 0 });
   const [isHovering, setIsHovering] = useState(false);
   const [hasAnimated, setHasAnimated] = useState(skipInitialAnimation);
@@ -38,12 +39,27 @@ export const ChordCard: React.FC<ChordCardProps> = ({
     }
   }, [hasAnimated]);
 
+  // Cancel any pending glow frame on unmount
+  useEffect(() => {
+    return () => {
+      if (glowFrameRef.current !== null) {
+        cancelAnimationFrame(glowFrameRef.current);
+      }
+    };
+  }, []);
+
+  // rAF-gated: at most one glow update per frame
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    setGlowPosition({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
+    if (glowFrameRef.current !== null) return;
+    const { clientX, clientY } = e;
+    glowFrameRef.current = requestAnimationFrame(() => {
+      glowFrameRef.current = null;
+      if (!cardRef.current) return;
+      const rect = cardRef.current.getBoundingClientRect();
+      setGlowPosition({
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      });
     });
   };
 
@@ -257,7 +273,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 >
                   <motion.button
                     type="button"
-                    className="relative w-10 h-10 rounded-full flex items-center justify-center cursor-pointer"
+                    className={`relative w-10 h-10 rounded-full flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}`}
                     data-locked={isLocked ? 'true' : 'false'}
                     title={isLocked ? "Unlock chord" : "Lock chord"}
                     aria-label={isLocked ? "Unlock chord" : "Lock chord"}
@@ -347,7 +363,10 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 }}
                 className={`
                   shrink-0 w-8 h-8 flex items-center justify-center rounded-full border
-                  ${isDistorted ? 'border-rose-900 text-rose-500' : 'border-neutral-700 text-neutral-500'}
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
+                  ${isDistorted
+                    ? 'border-rose-900 text-rose-500 focus-visible:ring-rose-500'
+                    : 'border-neutral-700 text-neutral-500 focus-visible:ring-cyan-500'}
                 `}
                 whileHover={{
                   scale: 1.2,
