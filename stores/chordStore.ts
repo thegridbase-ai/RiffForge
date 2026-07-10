@@ -4,6 +4,29 @@ import { parseUrlState } from '../utils/urlState';
 
 const urlState = parseUrlState();
 
+const FAVORITES_STORAGE_KEY = 'riffforge:favorites:v1';
+
+const loadFavorites = (): string[] => {
+  try {
+    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveFavorites = (favorites: string[]): void => {
+  try {
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+  } catch {
+    // Storage unavailable (private mode, quota) — favorites stay in-memory only
+  }
+};
+
 interface ChordStore {
   // Audio state
   isDistorted: boolean;
@@ -25,6 +48,10 @@ interface ChordStore {
   chordsToLoad: number;
   totalChordsAvailable: number;
 
+  // Favorites (base chord ids — stable across transposition)
+  favorites: string[];
+  showFavoritesOnly: boolean;
+
   // Actions
   setIsDistorted: (value: boolean) => void;
   setIsAudioReady: (value: boolean) => void;
@@ -38,6 +65,8 @@ interface ChordStore {
   setIsLoadingChords: (value: boolean) => void;
   setChordsToLoad: (count: number) => void;
   setTotalChordsAvailable: (count: number) => void;
+  toggleFavorite: (chordId: string) => void;
+  setShowFavoritesOnly: (value: boolean) => void;
 
   // Compound actions
   resetLockState: () => void;
@@ -58,6 +87,8 @@ export const useChordStore = create<ChordStore>((set) => ({
   isLoadingChords: false,
   chordsToLoad: 6,
   totalChordsAvailable: 0,
+  favorites: loadFavorites(),
+  showFavoritesOnly: false,
 
   // Actions
   setIsDistorted: (value) => set({ isDistorted: value }),
@@ -72,6 +103,14 @@ export const useChordStore = create<ChordStore>((set) => ({
   setIsLoadingChords: (value) => set({ isLoadingChords: value }),
   setChordsToLoad: (count) => set({ chordsToLoad: count }),
   setTotalChordsAvailable: (count) => set({ totalChordsAvailable: count }),
+  toggleFavorite: (chordId) => set((state) => {
+    const favorites = state.favorites.includes(chordId)
+      ? state.favorites.filter((id) => id !== chordId)
+      : [...state.favorites, chordId];
+    saveFavorites(favorites);
+    return { favorites };
+  }),
+  setShowFavoritesOnly: (value) => set({ showFavoritesOnly: value }),
 
   // Compound actions
   resetLockState: () => set({

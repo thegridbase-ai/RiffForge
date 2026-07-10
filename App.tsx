@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { audioEngine } from './services/audioEngine';
 import { DistortionSwitch } from './components/DistortionSwitch';
@@ -29,6 +29,10 @@ const App: React.FC = () => {
     isLoadingChords,
     chordsToLoad,
     totalChordsAvailable,
+    favorites,
+    showFavoritesOnly,
+    toggleFavorite,
+    setShowFavoritesOnly,
     setIsDistorted,
     setIsAudioReady,
     setActiveChordId,
@@ -46,6 +50,7 @@ const App: React.FC = () => {
   } = useChordStore();
 
   const relatedSectionRef = useRef<HTMLElement>(null);
+  const [favoriteChords, setFavoriteChords] = useState<Chord[]>([]);
 
   useEffect(() => {
     resetLockState();
@@ -80,6 +85,41 @@ const App: React.FC = () => {
   const handleChordClick = useCallback(async (chord: Chord) => {
     await playChord(chord);
   }, [playChord]);
+
+  const handleFavoriteToggle = useCallback((chord: Chord) => {
+    // Chord ids are stable across transposition, so the displayed id is the base id
+    toggleFavorite(chord.id);
+  }, [toggleFavorite]);
+
+  // Build the favorites view from the full base set of the current tuning+vibe
+  useEffect(() => {
+    if (!showFavoritesOnly) return;
+
+    let cancelled = false;
+
+    const loadFavoriteChords = async () => {
+      try {
+        const baseChords = await getChords(tuningMode, vibeMode);
+        const transposed = baseChords
+          .filter((chord: Chord) => favorites.includes(chord.id))
+          .map((chord: Chord) => {
+            try {
+              return transposeChord(chord, selectedRoot, tuningMode);
+            } catch {
+              return chord;
+            }
+          });
+        if (!cancelled) setFavoriteChords(transposed);
+      } catch {
+        if (!cancelled) setFavoriteChords([]);
+      }
+    };
+
+    loadFavoriteChords();
+    return () => {
+      cancelled = true;
+    };
+  }, [showFavoritesOnly, favorites, tuningMode, vibeMode, selectedRoot]);
 
   const handleLockToggle = useCallback(async (chord: Chord) => {
     if (lockedChordId === chord.id) {
@@ -209,6 +249,8 @@ const App: React.FC = () => {
     }
   }, [chordsToLoad, tuningMode, vibeMode, selectedRoot, isLoadingChords, displayedChords, setDisplayedChords, setIsLoadingChords, incrementChordsToLoad]);
 
+  const gridChords = showFavoritesOnly ? favoriteChords : displayedChords;
+
   return (
     <motion.div
       className={`min-h-screen transition-colors duration-700 ${isDistorted ? 'bg-[#080505]' : 'bg-[#0a0a0a]'}`}
@@ -314,6 +356,39 @@ const App: React.FC = () => {
                 isDistorted={isDistorted}
               />
 
+              <div className="flex justify-end mb-4">
+                <button
+                  type="button"
+                  onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                  aria-pressed={showFavoritesOnly}
+                  aria-label="Show favorites only"
+                  className={`
+                    flex items-center gap-2 px-3 h-8 rounded-full border font-mono text-[10px] uppercase tracking-widest transition-all duration-200
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
+                    ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
+                    ${showFavoritesOnly
+                      ? (isDistorted
+                          ? 'bg-rose-500/20 border-rose-500/60 text-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.3)]'
+                          : 'bg-cyan-500/20 border-cyan-500/60 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.3)]')
+                      : 'bg-neutral-900/50 border-white/10 text-neutral-400 hover:text-neutral-200 hover:border-white/20'
+                    }
+                  `}
+                >
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill={showFavoritesOnly ? 'currentColor' : 'none'}
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                  Favorites{favorites.length > 0 ? ` (${favorites.length})` : ''}
+                </button>
+              </div>
+
               <RootSelector
                   selectedRoot={selectedRoot}
                   onSelectRoot={setSelectedRoot}
@@ -323,9 +398,22 @@ const App: React.FC = () => {
         </div>
 
         <main className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-20" style={{ isolation: 'isolate' }}>
-          {displayedChords && displayedChords.length > 0 ? (
+          {showFavoritesOnly && gridChords.length === 0 ? (
+            <motion.div
+              className="col-span-full text-center py-16"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <p className={`font-['Share_Tech_Mono'] text-sm uppercase tracking-widest ${isDistorted ? 'text-rose-400/70' : 'text-cyan-400/70'}`}>
+                No favorites yet
+              </p>
+              <p className="font-mono text-xs mt-2 text-neutral-500">
+                Star a chord to pin it here.
+              </p>
+            </motion.div>
+          ) : gridChords && gridChords.length > 0 ? (
             <>
-              {displayedChords.map((chord, index) => {
+              {gridChords.map((chord, index) => {
                 const locked = isChordLocked(chord);
                 return (
                   <div
@@ -338,6 +426,8 @@ const App: React.FC = () => {
                       isDistorted={isDistorted}
                       onPlay={handleChordClick}
                       onLockToggle={handleLockToggle}
+                      onFavoriteToggle={handleFavoriteToggle}
+                      isFavorite={favorites.includes(chord.id)}
                       isLocked={locked}
                       index={index}
                       skipInitialAnimation={index < 6}
@@ -346,7 +436,7 @@ const App: React.FC = () => {
                 );
               })}
 
-              {chordsToLoad < totalChordsAvailable && (
+              {!showFavoritesOnly && chordsToLoad < totalChordsAvailable && (
                 <motion.div
                   className="col-span-full flex justify-center py-8"
                   initial={{ opacity: 0, y: 20 }}
@@ -404,7 +494,7 @@ const App: React.FC = () => {
               className="mb-12 scroll-mt-4"
             >
               {(() => {
-                const lockedChord = displayedChords.find(c => c.id === lockedChordId);
+                const lockedChord = gridChords.find(c => c.id === lockedChordId);
                 return (
                   <div className="flex flex-col items-center gap-3 mb-6">
                     <div className="flex items-center gap-4 w-full">

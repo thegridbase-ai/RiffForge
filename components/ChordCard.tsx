@@ -7,6 +7,8 @@ interface ChordCardProps {
   isDistorted: boolean;
   onPlay: (chord: Chord) => void;
   onLockToggle?: (chord: Chord) => void;
+  onFavoriteToggle?: (chord: Chord) => void;
+  isFavorite?: boolean;
   isLocked?: boolean;
   index?: number;
   skipInitialAnimation?: boolean;
@@ -17,6 +19,8 @@ export const ChordCard: React.FC<ChordCardProps> = ({
   isDistorted,
   onPlay,
   onLockToggle,
+  onFavoriteToggle,
+  isFavorite = false,
   isLocked = false,
   index = 0,
   skipInitialAnimation = false
@@ -186,10 +190,57 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 </AnimatePresence>
               </div>
 
+              <div className="flex items-center gap-2 shrink-0 ml-4">
+              {/* Favorite Button */}
+              {onFavoriteToggle && (
+                <motion.button
+                  type="button"
+                  aria-label={isFavorite ? `Remove ${chord.name} from favorites` : `Add ${chord.name} to favorites`}
+                  aria-pressed={isFavorite}
+                  title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                  className={`relative w-10 h-10 rounded-full flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}`}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFavoriteToggle(chord);
+                  }}
+                  style={{
+                    zIndex: 10,
+                    background: 'radial-gradient(circle at 30% 30%, rgba(40, 40, 40, 0.8), rgba(20, 20, 20, 0.9))',
+                    boxShadow: isFavorite
+                      ? (isDistorted
+                          ? '0 0 0 1px rgba(244, 63, 94, 0.6), 0 0 20px rgba(244, 63, 94, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.1)'
+                          : '0 0 0 1px rgba(34, 211, 238, 0.6), 0 0 20px rgba(34, 211, 238, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.1)')
+                      : '0 0 0 1px rgba(100, 100, 100, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.05)'
+                  }}
+                >
+                  <svg
+                    className="w-4 h-4 relative z-10 transition-colors duration-200"
+                    viewBox="0 0 24 24"
+                    fill={isFavorite ? 'currentColor' : 'none'}
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                      color: isFavorite ? (isDistorted ? '#fb7185' : '#22d3ee') : '#a3a3a3',
+                      filter: isFavorite
+                        ? (isDistorted
+                            ? 'drop-shadow(0 0 6px rgba(244, 63, 94, 0.9))'
+                            : 'drop-shadow(0 0 6px rgba(34, 211, 238, 0.9))')
+                        : 'none'
+                    }}
+                  >
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                </motion.button>
+              )}
+
               {/* Lock Button - Animated */}
               {onLockToggle && (
                 <motion.div
-                  className="relative shrink-0 ml-4"
+                  className="relative shrink-0"
                   style={{ pointerEvents: 'auto', zIndex: 10 }}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
@@ -278,6 +329,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                   </motion.button>
                 </motion.div>
               )}
+              </div>
             </div>
 
             <div className="flex items-end justify-between mb-4">
