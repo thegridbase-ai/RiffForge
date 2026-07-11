@@ -1,11 +1,18 @@
 import * as Tone from 'tone';
 
+export interface SequenceStep {
+  notes: string[];
+}
+
 class AudioEngine {
   private synth: Tone.PolySynth | null = null;
   private distortion: Tone.Distortion | null = null;
   private reverb: Tone.Reverb | null = null;
   private limiter: Tone.Limiter | null = null;
+  private clickSynth: Tone.MembraneSynth | null = null;
   private initialized: boolean = false;
+  private repeatEventId: number | null = null;
+  private metronomeEnabled: boolean = false;
 
   constructor() {
     // Lazy initialization
@@ -47,6 +54,23 @@ class AudioEngine {
         release: 2
       }
     }).connect(this.distortion);
+
+    // Looped chords overlap their 2s release tails; default 32 voices runs out
+    this.synth.maxPolyphony = 64;
+
+    // 5. Metronome click — routed straight to the limiter, OUTSIDE the
+    // distortion chain so the click stays clean even in metal mode
+    this.clickSynth = new Tone.MembraneSynth({
+      volume: -6,
+      pitchDecay: 0.008,
+      octaves: 2,
+      envelope: {
+        attack: 0.001,
+        decay: 0.08,
+        sustain: 0,
+        release: 0.05
+      }
+    }).connect(this.limiter);
 
     this.initialized = true;
   }
@@ -93,6 +117,74 @@ class AudioEngine {
 
   public stop() {
     this.synth?.releaseAll();
+  }
+
+  public setMetronomeEnabled(enabled: boolean) {
+    this.metronomeEnabled = enabled;
+  }
+
+  /**
+   * Loops a chord sequence on the Transport, one chord per beat (quarter
+   * notes) at the given BPM, through the existing synth/distortion chain.
+   * With an empty sequence it acts as a standalone click track.
+   * Call stopSequence() to cancel; call again to restart with new settings.
+   */
+  public playSequence(steps: SequenceStep[], bpm: number, onStep?: (index: number) => void) {
+    if (!this.initialized) return;
+
+    this.stopSequence();
+
+    const transport = Tone.getTransport();
+    transport.bpm.value = bpm;
+
+    let beat = 0;
+    this.repeatEventId = transport.scheduleRepeat((time) => {
+      const beatInBar = beat % 4;
+
+      // Metronome click: accent on the downbeat (higher pitch + velocity)
+      if (this.metronomeEnabled && this.clickSynth) {
+        this.clickSynth.triggerAttackRelease(
+          beatInBar === 0 ? 'C5' : 'G4',
+          '32n',
+          time,
+          beatInBar === 0 ? 1 : 0.55
+        );
+      }
+
+      if (steps.length > 0 && this.synth) {
+        const index = beat % steps.length;
+        this.synth.releaseAll(time);
+        steps[index].notes.forEach((note, i) => {
+          // Tight strum so chords stay locked to the beat; short duration
+          // keeps overlapping release tails within the voice budget
+          this.synth!.triggerAttackRelease(note, '8n', time + i * 0.015, 0.85);
+        });
+        if (onStep) {
+          Tone.getDraw().schedule(() => onStep(index), time);
+        }
+      }
+
+      beat++;
+    }, '4n');
+
+    transport.start();
+  }
+
+  /** Stops the loop and clears every Transport schedule cleanly. */
+  public stopSequence() {
+    const transport = Tone.getTransport();
+    if (this.repeatEventId !== null) {
+      transport.clear(this.repeatEventId);
+      this.repeatEventId = null;
+    }
+    transport.stop();
+    transport.cancel();
+    Tone.getDraw().cancel();
+    this.synth?.releaseAll();
+  }
+
+  public isSequencePlaying() {
+    return this.repeatEventId !== null;
   }
 
   public isReady() {
