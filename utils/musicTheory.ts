@@ -8,7 +8,7 @@ const getSemitoneDistance = (fromNote: string, toNote: string): number => {
   return toIndex - fromIndex;
 };
 
-const transposeNote = (note: string, semitones: number): string => {
+export const transposeNote = (note: string, semitones: number): string => {
   const match = note.match(/^([A-G]#?)(-?\d+)$/);
   if (!match) return note;
 
@@ -29,7 +29,7 @@ const transposeNote = (note: string, semitones: number): string => {
   return `${newName}${newOctave}`;
 };
 
-const transposeTabs = (originalTabs: string | undefined, semitones: number, tuningMode: TuningMode): string => {
+export const transposeTabs = (originalTabs: string | undefined, semitones: number, tuningMode: TuningMode): string => {
   if (!originalTabs) return '';
   if (originalTabs === 'TRANSPOSED') return originalTabs;
 
