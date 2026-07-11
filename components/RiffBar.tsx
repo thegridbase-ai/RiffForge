@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { audioEngine } from '../services/audioEngine';
 import { useRiffStore, MAX_RIFF_STEPS, MIN_BPM, MAX_BPM } from '../stores/riffStore';
 import { useChordStore } from '../stores/chordStore';
+import { riffToMidi } from '../utils/midi';
 
 const BPM_STEP = 5;
 
@@ -71,6 +72,21 @@ export const RiffBar: React.FC = () => {
     } else {
       startPlayback();
     }
+  };
+
+  const handleExportMidi = () => {
+    const { steps: currentSteps, bpm: currentBpm } = useRiffStore.getState();
+    if (currentSteps.length === 0) return;
+    const bytes = riffToMidi(currentSteps, currentBpm);
+    const blob = new Blob([bytes], { type: 'audio/midi' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `riff-${currentBpm}bpm.mid`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleMetronomeToggle = () => {
@@ -194,6 +210,34 @@ export const RiffBar: React.FC = () => {
                 <span className="font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
                   {steps.length}/{MAX_RIFF_STEPS}
                 </span>
+                <button
+                  type="button"
+                  aria-label="Export riff as MIDI"
+                  onClick={handleExportMidi}
+                  disabled={steps.length === 0}
+                  className={`
+                    flex items-center gap-1.5 px-3 h-8 rounded-full border border-white/10 font-mono text-[10px] uppercase tracking-widest
+                    text-neutral-400 hover:text-neutral-200 hover:border-white/30 transition-all duration-200
+                    disabled:opacity-30 disabled:cursor-default disabled:hover:text-neutral-400 disabled:hover:border-white/10
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${accentRing}
+                  `}
+                >
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3v12" />
+                    <path d="M7 10l5 5 5-5" />
+                    <path d="M4 19h16" />
+                  </svg>
+                  MIDI
+                </button>
                 {steps.length > 0 && (
                   <button
                     type="button"
