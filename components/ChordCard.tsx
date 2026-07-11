@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Chord } from '../types';
+import { buildChordExplorerUrl } from '../utils/chordExplorer';
 
 interface ChordCardProps {
   chord: Chord;
@@ -8,6 +9,8 @@ interface ChordCardProps {
   onPlay: (chord: Chord) => void;
   onLockToggle?: (chord: Chord) => void;
   onFavoriteToggle?: (chord: Chord) => void;
+  onAddToRiff?: (chord: Chord) => void;
+  canAddToRiff?: boolean;
   isFavorite?: boolean;
   isLocked?: boolean;
   index?: number;
@@ -20,6 +23,8 @@ export const ChordCard: React.FC<ChordCardProps> = ({
   onPlay,
   onLockToggle,
   onFavoriteToggle,
+  onAddToRiff,
+  canAddToRiff = true,
   isFavorite = false,
   isLocked = false,
   index = 0,
@@ -207,6 +212,42 @@ export const ChordCard: React.FC<ChordCardProps> = ({
               </div>
 
               <div className="flex items-center gap-2 shrink-0 ml-4">
+              {/* Add to Riff Button */}
+              {onAddToRiff && (
+                <motion.button
+                  type="button"
+                  aria-label={`Add ${chord.name} to riff`}
+                  title={canAddToRiff ? 'Add to riff' : 'Riff is full (16 steps)'}
+                  disabled={!canAddToRiff}
+                  className={`relative w-10 h-10 rounded-full flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'} ${canAddToRiff ? 'cursor-pointer' : 'cursor-default opacity-40'}`}
+                  whileHover={canAddToRiff ? { scale: 1.1 } : undefined}
+                  whileTap={canAddToRiff ? { scale: 0.9 } : undefined}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (canAddToRiff) onAddToRiff(chord);
+                  }}
+                  style={{
+                    zIndex: 10,
+                    background: 'radial-gradient(circle at 30% 30%, rgba(40, 40, 40, 0.8), rgba(20, 20, 20, 0.9))',
+                    boxShadow: '0 0 0 1px rgba(100, 100, 100, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.05)'
+                  }}
+                >
+                  <svg
+                    className="w-4 h-4 relative z-10 transition-colors duration-200"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ color: '#a3a3a3' }}
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </motion.button>
+              )}
+
               {/* Favorite Button */}
               {onFavoriteToggle && (
                 <motion.button
@@ -386,7 +427,40 @@ export const ChordCard: React.FC<ChordCardProps> = ({
 
           {/* Fretboard Data */}
           <div className="relative z-10 w-full pt-3 border-t border-white/5 flex justify-between items-center mt-auto">
-            <span className="font-mono text-[10px] text-neutral-400">TABLATURE</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-neutral-400">TABLATURE</span>
+              <motion.a
+                href={buildChordExplorerUrl(chord)}
+                target="_blank"
+                rel="noopener"
+                aria-label="Open in Chord Explorer"
+                title="Open in Chord Explorer"
+                onClick={(e) => e.stopPropagation()}
+                className={`
+                  w-7 h-7 flex items-center justify-center rounded-full border border-white/10 text-neutral-500
+                  transition-colors duration-200
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
+                  ${isDistorted ? 'hover:text-rose-400 hover:border-rose-500/50 focus-visible:ring-rose-500' : 'hover:text-cyan-400 hover:border-cyan-500/50 focus-visible:ring-cyan-500'}
+                `}
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.9 }}
+              >
+                <svg
+                  className="w-3 h-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </motion.a>
+            </div>
             <motion.span
               className={`font-mono text-sm tracking-[0.25em] font-bold ${
                 isDistorted

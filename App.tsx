@@ -6,7 +6,9 @@ import { ChordCard } from './components/ChordCard';
 import { RootSelector } from './components/RootSelector';
 import { TuningSelector } from './components/TuningSelector';
 import { VibeSelector } from './components/VibeSelector';
+import { RiffBar } from './components/RiffBar';
 import { useChordStore } from './stores/chordStore';
+import { useRiffStore, MAX_RIFF_STEPS } from './stores/riffStore';
 import { Chord, TuningMode, VibeMode } from './types';
 import { transposeChord } from './utils/musicTheory';
 import { syncUrlState } from './utils/urlState';
@@ -51,6 +53,22 @@ const App: React.FC = () => {
 
   const relatedSectionRef = useRef<HTMLElement>(null);
   const [favoriteChords, setFavoriteChords] = useState<Chord[]>([]);
+
+  const riffSteps = useRiffStore((state) => state.steps);
+  const metronomeOn = useRiffStore((state) => state.metronomeOn);
+  const addRiffStep = useRiffStore((state) => state.addStep);
+  const riffBarVisible = riffSteps.length > 0 || metronomeOn;
+  const canAddToRiff = riffSteps.length < MAX_RIFF_STEPS;
+
+  const handleAddToRiff = useCallback((chord: Chord) => {
+    // Snapshot the chord as currently displayed (already transposed)
+    addRiffStep({
+      id: chord.id,
+      name: chord.name,
+      subtext: chord.subtext,
+      notes: chord.notes
+    });
+  }, [addRiffStep]);
 
   useEffect(() => {
     resetLockState();
@@ -280,7 +298,7 @@ const App: React.FC = () => {
 
       <div className="fixed inset-0 opacity-[0.02] pointer-events-none bg-[url('/noise.svg')]"></div>
 
-      <div className={`relative z-10 max-w-7xl mx-auto px-6 py-12 flex flex-col min-h-screen ${isDistorted ? 'glitch-active' : ''}`}>
+      <div className={`relative z-10 max-w-7xl mx-auto px-6 py-12 flex flex-col min-h-screen ${riffBarVisible ? 'pb-40 md:pb-28' : ''} ${isDistorted ? 'glitch-active' : ''}`}>
         <motion.header
           className="mb-12 text-center"
           initial={{ opacity: 0, y: -30 }}
@@ -427,6 +445,8 @@ const App: React.FC = () => {
                       onPlay={handleChordClick}
                       onLockToggle={handleLockToggle}
                       onFavoriteToggle={handleFavoriteToggle}
+                      onAddToRiff={handleAddToRiff}
+                      canAddToRiff={canAddToRiff}
                       isFavorite={favorites.includes(chord.id)}
                       isLocked={locked}
                       index={index}
@@ -555,6 +575,8 @@ const App: React.FC = () => {
                       chord={chord}
                       isDistorted={isDistorted}
                       onPlay={handleChordClick}
+                      onAddToRiff={handleAddToRiff}
+                      canAddToRiff={canAddToRiff}
                       isLocked={false}
                       index={index}
                       skipInitialAnimation={false}
@@ -581,6 +603,8 @@ const App: React.FC = () => {
         </motion.footer>
 
       </div>
+
+      <RiffBar />
     </motion.div>
   );
 };
