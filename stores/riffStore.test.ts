@@ -119,6 +119,21 @@ describe('riffStore', () => {
     expect(state.currentStep).toBe(-1);
   });
 
+  it('respells legacy flat note names from stored v1 riffs so MIDI export works', async () => {
+    localStorage.setItem(RIFF_STORAGE_KEY, JSON.stringify({
+      steps: [{ key: 'old-1', baseId: 'drop-melodic-2', name: 'Drop Bb Maj7', subtext: 'Bb(VI)', notes: ['Bb2', 'D3', 'F3', 'A3', '??'] }],
+      bpm: 100
+    }));
+    const useRiffStore = await freshStore();
+    const { steps, bpm } = useRiffStore.getState();
+    expect(bpm).toBe(100);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].key).toBe('old-1');
+    expect(steps[0].notes).toEqual(['A#2', 'D3', 'F3', 'A3']);
+    const { riffToMidi } = await import('../utils/midi');
+    expect(() => riffToMidi(steps, bpm)).not.toThrow();
+  });
+
   it('falls back to defaults on corrupt localStorage payloads', async () => {
     localStorage.setItem(RIFF_STORAGE_KEY, '{not json');
     let useRiffStore = await freshStore();

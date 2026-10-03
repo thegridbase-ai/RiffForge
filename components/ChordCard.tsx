@@ -1,10 +1,13 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Chord } from '../types';
+import type { Tuning } from '../engine/types';
 import { buildChordExplorerUrl } from '../utils/chordExplorer';
+import { VoicingTab } from './VoicingTab';
 
 interface ChordCardProps {
   chord: Chord;
+  tuning: Tuning;
   isDistorted: boolean;
   onPlay: (chord: Chord) => void;
   onLockToggle?: (chord: Chord) => void;
@@ -19,6 +22,7 @@ interface ChordCardProps {
 
 export const ChordCard: React.FC<ChordCardProps> = ({
   chord,
+  tuning,
   isDistorted,
   onPlay,
   onLockToggle,
@@ -73,6 +77,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
     : 'rgba(8, 145, 178, 0.4)';
 
   const accentColor = isDistorted ? 'rose' : 'cyan';
+  const addable = canAddToRiff && !!chord.voicing;
 
   return (
     <motion.div
@@ -170,7 +175,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
               e.stopPropagation();
               return;
             }
-            onPlay(chord);
+            if (chord.voicing) onPlay(chord);
           }}
           className="relative z-10 w-full text-left flex-1 flex flex-col cursor-pointer"
           style={{ pointerEvents: 'auto' }}
@@ -217,14 +222,14 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 <motion.button
                   type="button"
                   aria-label={`Add ${chord.name} to riff`}
-                  title={canAddToRiff ? 'Add to riff' : 'Riff is full (16 steps)'}
-                  disabled={!canAddToRiff}
-                  className={`relative w-10 h-10 rounded-full flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'} ${canAddToRiff ? 'cursor-pointer' : 'cursor-default opacity-40'}`}
-                  whileHover={canAddToRiff ? { scale: 1.1 } : undefined}
-                  whileTap={canAddToRiff ? { scale: 0.9 } : undefined}
+                  title={!chord.voicing ? 'No playable shape to add' : canAddToRiff ? 'Add to riff' : 'Riff is full (16 steps)'}
+                  disabled={!addable}
+                  className={`relative w-10 h-10 rounded-full flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'} ${addable ? 'cursor-pointer' : 'cursor-default opacity-40'}`}
+                  whileHover={addable ? { scale: 1.1 } : undefined}
+                  whileTap={addable ? { scale: 0.9 } : undefined}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (canAddToRiff) onAddToRiff(chord);
+                    if (addable) onAddToRiff(chord);
                   }}
                   style={{
                     zIndex: 10,
@@ -398,12 +403,13 @@ export const ChordCard: React.FC<ChordCardProps> = ({
               <motion.button
                 type="button"
                 aria-label={`Play ${chord.name}`}
+                disabled={!chord.voicing}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onPlay(chord);
+                  if (chord.voicing) onPlay(chord);
                 }}
                 className={`
-                  shrink-0 w-8 h-8 flex items-center justify-center rounded-full border
+                  shrink-0 w-8 h-8 flex items-center justify-center rounded-full border disabled:opacity-30 disabled:cursor-default
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
                   ${isDistorted
                     ? 'border-rose-900 text-rose-500 focus-visible:ring-rose-500'
@@ -425,12 +431,18 @@ export const ChordCard: React.FC<ChordCardProps> = ({
             </div>
           </div>
 
-          {/* Fretboard Data */}
-          <div className="relative z-10 w-full pt-3 border-t border-white/5 flex justify-between items-center mt-auto">
+          {/* Fretboard Data: tab and audio both come from chord.voicing.shape */}
+          <div
+            className="relative z-10 w-full pt-3 border-t border-white/5 mt-auto"
+            data-tab={chord.voicing?.tab ?? ''}
+            data-notes={chord.notes.join(' ')}
+          >
+          <div className="flex justify-between items-center gap-2 mb-2">
             <div className="flex items-center gap-2">
               <span className="font-mono text-[10px] text-neutral-400">TABLATURE</span>
               <motion.a
-                href={buildChordExplorerUrl(chord)}
+                // Chord Explorer is E Standard only, so a Drop D shape would sound different there
+                href={buildChordExplorerUrl(chord, tuning.id === 'e-standard' ? chord.voicing?.shape : undefined)}
                 target="_blank"
                 rel="noopener"
                 aria-label="Open in Chord Explorer"
@@ -461,24 +473,36 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 </svg>
               </motion.a>
             </div>
-            <motion.span
-              className={`font-mono text-sm tracking-[0.25em] font-bold ${
-                isDistorted
-                  ? 'text-rose-500'
-                  : 'text-cyan-500'
-              }`}
-              animate={{
-                textShadow: isHovering
-                  ? (isDistorted
-                      ? '0 0 15px rgba(225, 29, 72, 0.8)'
-                      : '0 0 15px rgba(8, 145, 178, 0.8)')
-                  : (isDistorted
-                      ? '0 0 8px rgba(225, 29, 72, 0.6)'
-                      : '0 0 8px rgba(8, 145, 178, 0.6)')
-              }}
-            >
-              {chord.fretboard}
-            </motion.span>
+            {chord.voicing && (
+              <span
+                className="font-mono text-[10px] text-neutral-300 truncate"
+                title={`Sounds as ${chord.voicing.soundsAs}: ${chord.voicing.degrees}`}
+              >
+                <span className="text-neutral-400">SOUNDS </span>{chord.voicing.soundsAs}
+              </span>
+            )}
+          </div>
+          {chord.voicing ? (
+            <>
+              <VoicingTab
+                shape={chord.voicing.shape}
+                fingers={chord.voicing.fingers}
+                degreesByString={chord.voicing.degreesByString}
+                tuning={tuning}
+                isDistorted={isDistorted}
+              />
+              {chord.voicing.relaxed && (
+                <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-amber-300/90">
+                  Closest playable: {chord.voicing.relaxed.join(', ')}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="font-mono text-[11px] leading-snug text-neutral-300" role="note">
+              <span className={isDistorted ? 'text-rose-400' : 'text-cyan-400'}>No playable shape for your hand here.</span>{' '}
+              {chord.unplayableReason}
+            </p>
+          )}
           </div>
         </div>
       </motion.div>

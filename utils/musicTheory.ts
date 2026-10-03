@@ -1,5 +1,8 @@
 import { NOTES } from '../constants';
-import { Chord, TuningMode } from '../types';
+import { Chord } from '../types';
+
+const ROOTED_SUBTEXT = /^[A-G][#b]?(?=$|[\s(/\d]|m|maj|min|dim|aug|sus|add|M)/;
+const QUALITY_START = /^(m(?!\d)|maj|min|dim|aug|sus|Sus|add|M|\(|7|9|11|13|5(?!th))/;
 
 const getSemitoneDistance = (fromNote: string, toNote: string): number => {
   const fromIndex = NOTES.indexOf(fromNote);
@@ -8,111 +11,33 @@ const getSemitoneDistance = (fromNote: string, toNote: string): number => {
   return toIndex - fromIndex;
 };
 
-export const transposeNote = (note: string, semitones: number): string => {
-  const match = note.match(/^([A-G]#?)(-?\d+)$/);
-  if (!match) return note;
-
-  const [, name, octaveStr] = match;
-  const octave = parseInt(octaveStr, 10);
-
-  let currentIndex = NOTES.indexOf(name);
-  if (currentIndex === -1) return note;
-
-  let newIndex = currentIndex + semitones;
-  let octaveShift = Math.floor(newIndex / 12);
-
-  newIndex = ((newIndex % 12) + 12) % 12;
-
-  const newName = NOTES[newIndex];
-  const newOctave = octave + octaveShift;
-
-  return `${newName}${newOctave}`;
-};
-
-export const transposeTabs = (originalTabs: string | undefined, semitones: number, tuningMode: TuningMode): string => {
-  if (!originalTabs) return '';
-  if (originalTabs === 'TRANSPOSED') return originalTabs;
-
-  const strings = originalTabs.split(' ');
-
-  interface FretInfo {
-    fret: number;
-    isOpen: boolean;
-    isMuted: boolean;
-  }
-
-  const transposedStrings: (FretInfo | string)[] = strings.map((val, index) => {
-    if (val.toLowerCase() === 'x') return 'x';
-
-    const fret = parseInt(val, 10);
-    if (isNaN(fret)) return val;
-
-    let newFret = fret + semitones;
-
-    if (tuningMode === TuningMode.DROP && index === 0) {
-      newFret += 2;
-    }
-
-    while (newFret < 0) {
-      newFret += 12;
-    }
-
-    return { fret: newFret, isOpen: fret === 0, isMuted: false };
-  });
-
-  const allFrets = transposedStrings
-    .filter((s): s is FretInfo => typeof s === 'object' && !s.isMuted)
-    .map(s => s.fret);
-
-  if (allFrets.length > 0) {
-    transposedStrings.forEach((item) => {
-      if (typeof item === 'object' && !item.isMuted && item.fret < 0) {
-        item.fret += 12;
-      }
-    });
-  }
-
-  return transposedStrings.map(item => {
-    if (typeof item === 'object') {
-      return item.fret.toString();
-    }
-    return item;
-  }).join(' ');
-};
-
-export const transposeChord = (chord: Chord, targetRoot: string, tuningMode: TuningMode): Chord => {
+/**
+ * Moves a curated card's name and subtext to the selected root. Shapes and sounding notes are no
+ * longer transposed here: they come from the engine (utils/libraryVoicing.ts).
+ */
+export const transposeChordLabels = (chord: Chord, targetRoot: string): { name: string; subtext: string } => {
   const distance = getSemitoneDistance(chord.baseRoot, targetRoot);
 
-  const newNotes = distance === 0
-    ? chord.notes
-    : chord.notes.map(note => transposeNote(note, distance));
+  // A subtext is rooted when a note name is followed by a chord quality ("Em(add9)", "Bb(VI)"), not a
+  // word that merely starts with A-G ("Dim/b2").
+  const isRooted = ROOTED_SUBTEXT.test(chord.subtext);
+  // Glue only real chord qualities to the root; "b2" glued to E would read as E-flat
+  const separator = QUALITY_START.test(chord.subtext) ? '' : ' ';
+  const subtext = isRooted
+    ? chord.subtext.replace(/^[A-G][#b]?/, targetRoot)
+    : `${targetRoot}${separator}${chord.subtext}`;
 
-  const isGenericSubtext = !chord.subtext.match(/^[A-G]/);
-  const newSubtext = isGenericSubtext
-    ? `${targetRoot}${chord.subtext}`
-    : chord.subtext.replace(/^[A-G]#?/, targetRoot);
-
-  let newName = chord.name;
+  let name = chord.name;
   if (distance !== 0) {
     const noteMatch = chord.name.match(/^([A-G]#?)(\s|$|m|M|Major|Minor|Maj|Min|7|9|add|sus|dim|aug|maj|min)/i);
     if (noteMatch) {
-      const originalNote = noteMatch[1];
-      const originalIndex = NOTES.indexOf(originalNote);
+      const originalIndex = NOTES.indexOf(noteMatch[1]);
       if (originalIndex !== -1) {
-        const newIndex = ((originalIndex + distance % 12) + 12) % 12;
-        const newNote = NOTES[newIndex];
-        newName = chord.name.replace(/^[A-G]#?/i, newNote);
+        const newIndex = ((originalIndex + (distance % 12)) + 12) % 12;
+        name = chord.name.replace(/^[A-G]#?/i, NOTES[newIndex]);
       }
     }
   }
 
-  const newTabs = transposeTabs(chord.fretboard, distance, tuningMode);
-
-  return {
-    ...chord,
-    name: newName,
-    subtext: newSubtext,
-    notes: newNotes,
-    fretboard: newTabs
-  };
+  return { name, subtext };
 };

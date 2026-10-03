@@ -60,6 +60,10 @@ Production'da debug loglari kalmamali.
 - [ ] 4-fret spread optimizasyonunu implement et VEYA
 - [ ] Yorumlanmis kodu tamamen sil
 
+**Durum (2026-10-03): Gecersiz, `engine/` ile asildi.** `transposeTabs` kaldirildi. Kart tablari artik
+`engine/` (parmak atamasi, mm cinsinden uzanma, barresiz uretim) tarafindan `utils/libraryVoicing.ts`
+uzerinden uretiliyor; perde-acikligi kurali yerine kisisel el profili kullaniliyor.
+
 ---
 
 ## Orta Oncelikli Upgrades

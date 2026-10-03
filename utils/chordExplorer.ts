@@ -69,9 +69,26 @@ export const mapToExplorerType = (name: string, subtext: string): ChordExplorerT
   return minorish ? 'minor' : 'major';
 };
 
-/** Builds the full Chord Explorer URL. Sharps are URL-encoded (C# -> C%23). */
-export const buildChordExplorerUrl = (chord: { name: string; subtext: string }): string => {
+/** Chord Explorer's URL ids are case-sensitive and capitalize only Major. */
+const TYPE_PARAM: Record<ChordExplorerType, string> = {
+  major: 'Major', minor: 'minor', dim: 'dim', aug: 'aug', '7': '7',
+  m7: 'm7', maj7: 'maj7', dim7: 'dim7', sus2: 'sus2', sus4: 'sus4'
+};
+
+/** Shape as Chord Explorer's `gv` param: low -> high frets joined by "-", "x" for muted ("0-2-2-x-x-x"). */
+export const shapeToGvParam = (shape: readonly (number | null)[]): string =>
+  shape.map((f) => (f === null ? 'x' : String(f))).join('-');
+
+/**
+ * Builds the full Chord Explorer URL. Sharps are URL-encoded (C# -> C%23). With a shape, Chord Explorer's
+ * "Playable for me" panel opens on that exact voicing.
+ */
+export const buildChordExplorerUrl = (
+  chord: { name: string; subtext: string },
+  shape?: readonly (number | null)[]
+): string => {
   const root = parseRoot(chord.name, chord.subtext);
-  const type = mapToExplorerType(chord.name, chord.subtext);
-  return `${CHORD_EXPLORER_BASE_URL}?root=${encodeURIComponent(root)}&type=${encodeURIComponent(type)}`;
+  const type = TYPE_PARAM[mapToExplorerType(chord.name, chord.subtext)];
+  const gv = shape ? `&gv=${shapeToGvParam(shape)}` : '';
+  return `${CHORD_EXPLORER_BASE_URL}?root=${encodeURIComponent(root)}&type=${encodeURIComponent(type)}${gv}`;
 };

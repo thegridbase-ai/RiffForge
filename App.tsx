@@ -10,7 +10,8 @@ import { RiffBar } from './components/RiffBar';
 import { useChordStore } from './stores/chordStore';
 import { useRiffStore, MAX_RIFF_STEPS } from './stores/riffStore';
 import { Chord, TuningMode, VibeMode } from './types';
-import { transposeChord } from './utils/musicTheory';
+import { resolveLibraryChord, tuningForMode } from './utils/libraryVoicing';
+import { DEFAULT_HAND_PROFILE } from './engine/handProfile';
 import { syncUrlState } from './utils/urlState';
 import { getChords } from './constants';
 
@@ -53,6 +54,8 @@ const App: React.FC = () => {
 
   const relatedSectionRef = useRef<HTMLElement>(null);
   const [favoriteChords, setFavoriteChords] = useState<Chord[]>([]);
+  const handProfile = DEFAULT_HAND_PROFILE;
+  const tuning = tuningForMode(tuningMode);
 
   const riffSteps = useRiffStore((state) => state.steps);
   const metronomeOn = useRiffStore((state) => state.metronomeOn);
@@ -94,6 +97,8 @@ const App: React.FC = () => {
   }, [isDistorted, isAudioReady, handleUserInteraction, setIsDistorted]);
 
   const playChord = useCallback(async (chord: Chord) => {
+    // Unplayable cards have no shape, so there is nothing honest to play
+    if (!chord.voicing) return;
     await handleUserInteraction();
     audioEngine.playChord(chord.notes);
     setActiveChordId(chord.id);
@@ -118,16 +123,10 @@ const App: React.FC = () => {
     const loadFavoriteChords = async () => {
       try {
         const baseChords = await getChords(tuningMode, vibeMode);
-        const transposed = baseChords
+        const resolved = baseChords
           .filter((chord: Chord) => favorites.includes(chord.id))
-          .map((chord: Chord) => {
-            try {
-              return transposeChord(chord, selectedRoot, tuningMode);
-            } catch {
-              return chord;
-            }
-          });
-        if (!cancelled) setFavoriteChords(transposed);
+          .map((chord: Chord) => resolveLibraryChord(chord, selectedRoot, tuningMode, handProfile));
+        if (!cancelled) setFavoriteChords(resolved);
       } catch {
         if (!cancelled) setFavoriteChords([]);
       }
@@ -137,7 +136,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [showFavoritesOnly, favorites, tuningMode, vibeMode, selectedRoot]);
+  }, [showFavoritesOnly, favorites, tuningMode, vibeMode, selectedRoot, handProfile]);
 
   const handleLockToggle = useCallback(async (chord: Chord) => {
     if (lockedChordId === chord.id) {
@@ -149,16 +148,14 @@ const App: React.FC = () => {
 
       const baseChords = await getChords(tuningMode, vibeMode);
 
-      const originalParent = baseChords.find((p: Chord) => {
-        const transposed = transposeChord(p, selectedRoot, tuningMode);
-        return transposed.id === chord.id;
-      });
+      // Ids are stable across roots, so the displayed id is the base id
+      const originalParent = baseChords.find((p: Chord) => p.id === chord.id);
 
       if (originalParent && originalParent.relatedChords && originalParent.relatedChords.length > 0) {
-        const transposedRelated = originalParent.relatedChords
+        const resolvedRelated = originalParent.relatedChords
           .slice(0, RELATED_CHORDS_COUNT)
-          .map((relatedChord: Chord) => transposeChord(relatedChord, selectedRoot, tuningMode));
-        setRelatedChords(transposedRelated);
+          .map((relatedChord: Chord) => resolveLibraryChord(relatedChord, selectedRoot, tuningMode, handProfile));
+        setRelatedChords(resolvedRelated);
 
         setTimeout(() => {
           relatedSectionRef.current?.scrollIntoView({
@@ -170,7 +167,7 @@ const App: React.FC = () => {
         setRelatedChords([]);
       }
     }
-  }, [lockedChordId, playChord, selectedRoot, tuningMode, vibeMode, setLockedChordId, setRelatedChords]);
+  }, [lockedChordId, playChord, selectedRoot, tuningMode, vibeMode, handProfile, setLockedChordId, setRelatedChords]);
 
   const isChordLocked = useCallback((chord: Chord) => {
     if (!lockedChordId) return false;
@@ -194,25 +191,10 @@ const App: React.FC = () => {
 
         setTotalChordsAvailable(baseChords.length);
 
+        // Every tab on screen comes from an engine shape, so cards render already resolved
         const firstBatch = baseChords.slice(0, CHORDS_PER_BATCH);
-        const strippedChords = firstBatch.map((chord: Chord) => ({
-          ...chord,
-          relatedChords: undefined
-        }));
-
-        setDisplayedChords(strippedChords as Chord[]);
+        setDisplayedChords(firstBatch.map((chord: Chord) => resolveLibraryChord(chord, selectedRoot, tuningMode, handProfile)));
         setIsLoadingChords(false);
-
-        setTimeout(() => {
-          const transposed = firstBatch.map((chord: Chord) => {
-            try {
-              return transposeChord(chord, selectedRoot, tuningMode);
-            } catch {
-              return chord;
-            }
-          });
-          setDisplayedChords(transposed);
-        }, 150);
       } catch {
         setDisplayedChords([]);
         setIsLoadingChords(false);
@@ -220,7 +202,7 @@ const App: React.FC = () => {
     };
 
     loadChords();
-  }, [selectedRoot, tuningMode, vibeMode, setDisplayedChords, setIsLoadingChords, setChordsToLoad, setTotalChordsAvailable]);
+  }, [selectedRoot, tuningMode, vibeMode, handProfile, setDisplayedChords, setIsLoadingChords, setChordsToLoad, setTotalChordsAvailable]);
 
   const loadMoreChords = useCallback(async () => {
     if (isLoadingChords) return;
@@ -241,31 +223,14 @@ const App: React.FC = () => {
         return;
       }
 
-      setDisplayedChords([...displayedChords, ...(nextBatch as Chord[])]);
+      const resolved = nextBatch.map((chord: Chord) => resolveLibraryChord(chord, selectedRoot, tuningMode, handProfile));
+      setDisplayedChords([...displayedChords, ...resolved]);
       incrementChordsToLoad(CHORDS_PER_BATCH);
-
-      setTimeout(() => {
-        const transposed = nextBatch.map((chord: Chord) => {
-          try {
-            return transposeChord(chord, selectedRoot, tuningMode);
-          } catch {
-            return chord;
-          }
-        });
-
-        const newChords = [...displayedChords];
-        const startIndex = displayedChords.length;
-        transposed.forEach((chord: Chord, i: number) => {
-          newChords[startIndex + i] = chord;
-        });
-        setDisplayedChords(newChords);
-      }, 100);
-
       setIsLoadingChords(false);
     } catch {
       setIsLoadingChords(false);
     }
-  }, [chordsToLoad, tuningMode, vibeMode, selectedRoot, isLoadingChords, displayedChords, setDisplayedChords, setIsLoadingChords, incrementChordsToLoad]);
+  }, [chordsToLoad, tuningMode, vibeMode, selectedRoot, handProfile, isLoadingChords, displayedChords, setDisplayedChords, setIsLoadingChords, incrementChordsToLoad]);
 
   const gridChords = showFavoritesOnly ? favoriteChords : displayedChords;
 
@@ -441,6 +406,7 @@ const App: React.FC = () => {
                   >
                     <ChordCard
                       chord={chord}
+                      tuning={tuning}
                       isDistorted={isDistorted}
                       onPlay={handleChordClick}
                       onLockToggle={handleLockToggle}
@@ -573,6 +539,7 @@ const App: React.FC = () => {
                   >
                     <ChordCard
                       chord={chord}
+                      tuning={tuning}
                       isDistorted={isDistorted}
                       onPlay={handleChordClick}
                       onAddToRiff={handleAddToRiff}

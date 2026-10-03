@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRoot, mapToExplorerType, buildChordExplorerUrl } from './chordExplorer';
+import { parseRoot, mapToExplorerType, buildChordExplorerUrl, shapeToGvParam } from './chordExplorer';
 
 describe('parseRoot', () => {
   it('extracts natural and sharp roots from the name', () => {
@@ -87,8 +87,14 @@ describe('buildChordExplorerUrl', () => {
       .toBe('https://chords.thegridbase.com/?root=C%23&type=m7');
   });
 
-  it('encodes sharps for major chords too (F#5)', () => {
+  it('encodes sharps for major chords too, with the case-sensitive Major id (F#5)', () => {
     expect(buildChordExplorerUrl({ name: 'F#5', subtext: 'F#5' }))
-      .toBe('https://chords.thegridbase.com/?root=F%23&type=major');
+      .toBe('https://chords.thegridbase.com/?root=F%23&type=Major');
+  });
+
+  it('appends the exact shape as gv, low -> high with x for muted', () => {
+    expect(buildChordExplorerUrl({ name: 'E', subtext: 'E5' }, [0, 2, 2, null, null, null]))
+      .toBe('https://chords.thegridbase.com/?root=E&type=Major&gv=0-2-2-x-x-x');
+    expect(shapeToGvParam([null, 13, 15, null, 10, 0])).toBe('x-13-15-x-10-0');
   });
 });
