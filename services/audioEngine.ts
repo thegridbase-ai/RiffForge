@@ -1,8 +1,32 @@
 import * as Tone from 'tone';
+import type { PlaybackEvent } from '../engine/types';
+import { midiToName } from '../engine/pitch';
 
 export interface SequenceStep {
   notes: string[];
 }
+
+export interface RhythmClick {
+  timeSec: number;
+  strong: boolean;
+}
+
+export interface PlayRhythmOptions {
+  /** Loop length in seconds (the whole pattern). */
+  loopSeconds: number;
+  bpm: number;
+  /** Metronome pulses inside one loop (beats; eighths in x/8), strong on bar starts. */
+  clickTimes: RhythmClick[];
+  metronome: boolean;
+  /** Called on the UI thread (Tone.Draw) when events[index] sounds. */
+  onEvent?: (index: number) => void;
+  /** Optional playhead: called with the grid step index every stepSeconds, rests included. */
+  stepSeconds?: number;
+  onStep?: (step: number) => void;
+}
+
+/** Per-string strum spread for rhythm hits; kept tight so chugs stay on the grid. */
+const RHYTHM_STRUM_SEC = 0.006;
 
 class AudioEngine {
   private synth: Tone.PolySynth | null = null;
@@ -13,6 +37,12 @@ class AudioEngine {
   private initialized: boolean = false;
   private repeatEventId: number | null = null;
   private metronomeEnabled: boolean = false;
+  private rhythmSynth: Tone.PolySynth | null = null;
+  private rhythmParts: Tone.Part[] = [];
+  private rhythmLoopSeconds = 0;
+  private rhythmOffsetSeconds = 0;
+  private rhythmMetronome = false;
+  private rhythmStopListeners = new Set<() => void>();
 
   constructor() {
     // Lazy initialization
@@ -72,6 +102,15 @@ class AudioEngine {
       }
     }).connect(this.limiter);
 
+    // 6. Rhythm Lab voice: same distortion/reverb/limiter chain, but a percussive envelope so palm-muted
+    // 16ths stay tight (the chord synth's 50 ms attack and 2 s release would smear them)
+    this.rhythmSynth = new Tone.PolySynth(Tone.Synth, {
+      volume: -2,
+      oscillator: { type: 'triangle' },
+      envelope: { attack: 0.003, decay: 0.25, sustain: 0.45, release: 0.08 }
+    }).connect(this.distortion);
+    this.rhythmSynth.maxPolyphony = 48;
+
     this.initialized = true;
   }
 
@@ -85,6 +124,7 @@ class AudioEngine {
         oscillator: { type: "sawtooth" },
         volume: -8 // Lower volume to compensate for distortion gain
       });
+      this.rhythmSynth?.set({ oscillator: { type: 'sawtooth' }, volume: -8 });
       
       this.distortion.wet.rampTo(1, 0.2);
     } else {
@@ -94,6 +134,7 @@ class AudioEngine {
         oscillator: { type: "triangle" },
         volume: -2 // Boost volume for clean signal
       });
+      this.rhythmSynth?.set({ oscillator: { type: 'triangle' }, volume: -2 });
       
       this.distortion.wet.rampTo(0, 0.2);
     }
@@ -131,6 +172,9 @@ class AudioEngine {
    */
   public playSequence(steps: SequenceStep[], bpm: number, onStep?: (index: number) => void) {
     if (!this.initialized) return;
+
+    // The RiffBar and the Rhythm Lab share the Transport: stop the rhythm loop and tell the lab
+    if (this.isRhythmPlaying()) this.stopRhythm();
 
     this.stopSequence();
 
@@ -189,6 +233,111 @@ class AudioEngine {
 
   public isReady() {
     return this.initialized;
+  }
+
+  /**
+   * Loops a Rhythm Lab pattern on the Transport: one Tone.Part over the playback events (time = timeSec,
+   * looped at loopSeconds), a click Part for the metronome and an optional playhead Part. Calling it while a
+   * rhythm plays restarts cleanly at the same position in the loop. Callers stop a running RiffBar sequence
+   * (and its store state) first; this method only guards the shared Transport.
+   */
+  public playRhythm(events: PlaybackEvent[], opts: PlayRhythmOptions) {
+    if (!this.initialized || !this.rhythmSynth || !(opts.loopSeconds > 0)) return;
+
+    const transport = Tone.getTransport();
+    let offset = 0;
+    if (this.rhythmParts.length > 0 && this.rhythmLoopSeconds > 0) {
+      // Loop position = start offset + Transport time; keep the same fraction of the new loop
+      const position = (this.rhythmOffsetSeconds + transport.seconds) % this.rhythmLoopSeconds;
+      const phase = position / this.rhythmLoopSeconds;
+      offset = Number.isFinite(phase) ? phase * opts.loopSeconds : 0;
+    }
+    this.teardownRhythm();
+    if (this.repeatEventId !== null) this.stopSequence();
+
+    transport.bpm.value = opts.bpm;
+    this.rhythmLoopSeconds = opts.loopSeconds;
+    this.rhythmOffsetSeconds = offset;
+    this.rhythmMetronome = opts.metronome;
+    const synth = this.rhythmSynth;
+    const draw = Tone.getDraw();
+
+    const notePart = new Tone.Part<{ time: number; index: number }>((time, value) => {
+      const event = events[value.index];
+      if (!event || event.midi.length === 0) return;
+      const notes = event.midi.map(midiToName);
+      const duration = Math.max(0.01, event.durationSec);
+      const spread = event.kind === 'dead' ? 0.002 : RHYTHM_STRUM_SEC;
+      notes.forEach((note, i) => {
+        synth.triggerAttackRelease(note, duration, time + i * spread, event.velocity);
+      });
+      if (opts.onEvent) draw.schedule(() => opts.onEvent?.(value.index), time);
+    }, events.map((event, index) => ({ time: event.timeSec, index })));
+
+    const clickPart = new Tone.Part<{ time: number; strong: boolean }>((time, value) => {
+      if (!this.rhythmMetronome || !this.clickSynth) return;
+      this.clickSynth.triggerAttackRelease(value.strong ? 'C5' : 'G4', '32n', time, value.strong ? 1 : 0.55);
+    }, opts.clickTimes.map((click) => ({ time: click.timeSec, strong: click.strong })));
+
+    this.rhythmParts = [notePart, clickPart];
+
+    if (opts.onStep && opts.stepSeconds !== undefined && opts.stepSeconds > 0) {
+      const steps = Math.round(opts.loopSeconds / opts.stepSeconds);
+      const onStep = opts.onStep;
+      const stepPart = new Tone.Part<{ time: number; step: number }>((time, value) => {
+        draw.schedule(() => onStep(value.step), time);
+      }, Array.from({ length: steps }, (_, step) => ({ time: step * (opts.stepSeconds as number), step })));
+      this.rhythmParts.push(stepPart);
+    }
+
+    for (const part of this.rhythmParts) {
+      part.loop = true;
+      part.loopStart = 0;
+      part.loopEnd = opts.loopSeconds;
+      part.start(0, offset);
+    }
+    transport.start();
+  }
+
+  /** Stops the rhythm loop and notifies onRhythmStopped listeners (when one was playing). */
+  public stopRhythm() {
+    const wasPlaying = this.rhythmParts.length > 0;
+    this.teardownRhythm();
+    if (!wasPlaying) return;
+    this.rhythmStopListeners.forEach((listener) => listener());
+  }
+
+  public isRhythmPlaying() {
+    return this.rhythmParts.length > 0;
+  }
+
+  /** Metronome on/off for a running rhythm loop without restarting it. */
+  public setRhythmMetronome(enabled: boolean) {
+    this.rhythmMetronome = enabled;
+  }
+
+  /** Registers a listener for rhythm stops (e.g. the RiffBar took over the Transport). Returns an unsubscribe. */
+  public onRhythmStopped(listener: () => void): () => void {
+    this.rhythmStopListeners.add(listener);
+    return () => {
+      this.rhythmStopListeners.delete(listener);
+    };
+  }
+
+  private teardownRhythm() {
+    if (this.rhythmParts.length === 0) return;
+    for (const part of this.rhythmParts) {
+      part.stop();
+      part.dispose();
+    }
+    this.rhythmParts = [];
+    this.rhythmLoopSeconds = 0;
+    this.rhythmOffsetSeconds = 0;
+    const transport = Tone.getTransport();
+    transport.stop();
+    transport.cancel();
+    Tone.getDraw().cancel();
+    this.rhythmSynth?.releaseAll();
   }
 }
 

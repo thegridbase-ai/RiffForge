@@ -8,6 +8,7 @@ import { audioEngine } from '../services/audioEngine';
 import { useChordStore } from '../stores/chordStore';
 import { useHandProfileStore } from '../stores/handProfileStore';
 import { useRiffStore, MAX_RIFF_STEPS } from '../stores/riffStore';
+import { useRhythmStore, MAX_RHYTHM_SLOTS } from '../stores/rhythmStore';
 import { tuningForMode } from '../utils/libraryVoicing';
 import { VoicingTab } from './VoicingTab';
 import {
@@ -122,10 +123,12 @@ interface FinderCardProps {
   profile: HandProfile;
   showNovelty: boolean;
   canAdd: boolean;
+  canSlot: boolean;
   isDistorted: boolean;
   reduceMotion: boolean;
   onPlay: (voicing: GeneratedVoicing) => void;
   onAdd: (voicing: GeneratedVoicing) => void;
+  onSlot: (voicing: GeneratedVoicing) => void;
 }
 
 const FinderCard: React.FC<FinderCardProps> = ({
@@ -137,10 +140,12 @@ const FinderCard: React.FC<FinderCardProps> = ({
   profile,
   showNovelty,
   canAdd,
+  canSlot,
   isDistorted,
   reduceMotion,
   onPlay,
-  onAdd
+  onAdd,
+  onSlot
 }) => {
   const tab = toRiffForgeTab(voicing.shape);
   const tags = voicingTagLabels(voicing.tags);
@@ -220,6 +225,21 @@ const FinderCard: React.FC<FinderCardProps> = ({
           </svg>
           Riff
         </button>
+        <button
+          type="button"
+          aria-label={`Send ${voicing.name}, ${tab} to a Rhythm Lab chord slot`}
+          title={canSlot ? 'Use as a Rhythm Lab chord slot' : `Rhythm Lab already has ${MAX_RHYTHM_SLOTS} slots`}
+          disabled={!canSlot}
+          onClick={() => onSlot(voicing)}
+          className={`flex items-center gap-1.5 px-3 h-11 md:h-9 rounded-full border font-mono text-[10px] uppercase tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-default ${ring} ${inactivePill}`}
+        >
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <rect x="3" y="6" width="18" height="12" rx="2" />
+            <line x1="9" y1="6" x2="9" y2="18" />
+            <line x1="15" y1="6" x2="15" y2="18" />
+          </svg>
+          Slot
+        </button>
         <a
           href={finderExplorerUrl(root, family.id, voicing, tuning)}
           target="_blank"
@@ -253,6 +273,8 @@ export const VoicingFinder: React.FC<VoicingFinderProps> = ({ onOpenHandProfile,
   const setCalibration = useHandProfileStore((s) => s.setCalibration);
   const riffLength = useRiffStore((s) => s.steps.length);
   const addStep = useRiffStore((s) => s.addStep);
+  const slotCount = useRhythmStore((s) => s.slots.length);
+  const addSlot = useRhythmStore((s) => s.addSlot);
   const reduceMotion = useReducedMotion() ?? false;
 
   const titleId = useId();
@@ -321,6 +343,24 @@ export const VoicingFinder: React.FC<VoicingFinderProps> = ({ onOpenHandProfile,
       setActionMessage(added ? `Added ${voicing.name} to the riff.` : `The riff is full (${MAX_RIFF_STEPS} steps).`);
     },
     [addStep, family, tuning]
+  );
+
+  const slotVoicing = useCallback(
+    (voicing: GeneratedVoicing) => {
+      const added = addSlot({
+        label: voicing.name,
+        root: selectedRoot,
+        source: { kind: 'family', familyId: voicing.familyId },
+        shape: [...voicing.shape],
+        tuningId: tuning.id
+      });
+      setActionMessage(
+        added
+          ? `${voicing.name} is now Rhythm Lab slot ${useRhythmStore.getState().slots.length}.`
+          : `The Rhythm Lab already has ${MAX_RHYTHM_SLOTS} chord slots.`
+      );
+    },
+    [addSlot, selectedRoot, tuning]
   );
 
   const applyHint = (hint: RelaxationHint) => {
@@ -473,10 +513,12 @@ export const VoicingFinder: React.FC<VoicingFinderProps> = ({ onOpenHandProfile,
               profile={effectiveProfile}
               showNovelty={sort === 'unusual'}
               canAdd={canAdd}
+              canSlot={slotCount < MAX_RHYTHM_SLOTS}
               isDistorted={isDistorted}
               reduceMotion={reduceMotion}
               onPlay={playVoicing}
               onAdd={addVoicing}
+              onSlot={slotVoicing}
             />
           ))}
         </div>

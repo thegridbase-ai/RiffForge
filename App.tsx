@@ -21,12 +21,12 @@ const RELATED_CHORDS_COUNT = 6;
 
 const loadVoicingFinder = () => import('./components/VoicingFinder');
 const loadHandProfilePanel = () => import('./components/HandProfilePanel');
+const loadRhythmLab = () => import('./components/RhythmLab');
 const VoicingFinder = lazy(() => loadVoicingFinder().then((m) => ({ default: m.VoicingFinder })));
 const HandProfilePanel = lazy(() => loadHandProfilePanel().then((m) => ({ default: m.HandProfilePanel })));
+const RhythmLab = lazy(() => loadRhythmLab().then((m) => ({ default: m.RhythmLab })));
 
-// Rhythm Lab slot: the orchestrator flips this flag and renders the lazy RhythmLab in the 'rhythm' view below.
-// While it is false the switch hides the option and ?view=rhythm falls back to the library.
-const RHYTHM_LAB_ENABLED = false;
+const RHYTHM_LAB_ENABLED = true;
 
 const initialView = (): AppView => {
   const view = parseUrlState().view ?? 'library';
@@ -48,7 +48,7 @@ const ViewSwitch: React.FC<ViewSwitchProps> = ({ view, onChange, isDistorted, sh
   const options: { id: AppView; label: string; prefetch?: () => void }[] = [
     { id: 'library', label: 'LIBRARY' },
     { id: 'finder', label: 'VOICING FINDER', prefetch: () => void loadVoicingFinder() },
-    ...(showRhythmLab ? [{ id: 'rhythm' as const, label: 'RHYTHM LAB' }] : [])
+    ...(showRhythmLab ? [{ id: 'rhythm' as const, label: 'RHYTHM LAB', prefetch: () => void loadRhythmLab() }] : [])
   ];
 
   return (
@@ -511,8 +511,11 @@ const App: React.FC = () => {
         )}
 
         {view === 'rhythm' && RHYTHM_LAB_ENABLED && (
-          // Rhythm Lab slot: <Suspense fallback={<LazyFallback />}><RhythmLab /></Suspense> goes here
-          <main className="pb-20" />
+          <main className="pb-20">
+            <Suspense fallback={<LazyFallback />}>
+              <RhythmLab />
+            </Suspense>
+          </main>
         )}
 
         {view === 'library' && (

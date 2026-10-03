@@ -1,4 +1,7 @@
 import { NOTES } from '../constants';
+import type { HarmonySlot, Meter, MidiNoteEvent, RhythmPattern, Tuning } from '../engine/types';
+import { rhythmToMidiNotes } from '../engine/rhythm/playback';
+import { patternLengthTicks } from '../engine/rhythm/grid';
 
 /**
  * Minimal Standard MIDI File (SMF) writer — Format 0, single track.
@@ -97,3 +100,74 @@ export const riffToMidi = (steps: { notes: string[] }[], bpm: number): Uint8Arra
   }));
   return encodeMidi(events, bpm);
 };
+
+// ---------------------------------------------------------------------------
+// Note-level encoding (Rhythm Lab)
+// ---------------------------------------------------------------------------
+
+export interface EncodeMidiNotesOptions {
+  /** Writes a time signature meta event (FF 58) at tick 0. */
+  meter?: Meter;
+  /** Places End of Track here when it is later than the last note-off, so loops keep trailing rests. */
+  lengthTicks?: number;
+}
+
+const clampVelocity = (velocity: number): number =>
+  Number.isFinite(velocity) ? Math.min(127, Math.max(1, Math.round(velocity))) : NOTE_ON_VELOCITY;
+
+/** FF 58 04 nn dd cc bb: numerator, log2(denominator), MIDI clocks per click (quarter = 24), 8 32nds per quarter. */
+const timeSignatureMeta = (meter: Meter): number[] => {
+  const log2 = Math.round(Math.log2(meter.denominator));
+  const clocksPerClick = Math.round((24 * 4) / meter.denominator);
+  return [0xff, 0x58, 0x04, meter.numerator & 0xff, log2 & 0xff, clocksPerClick & 0xff, 0x08];
+};
+
+/**
+ * Format 0 single-track SMF from absolute-tick notes (480 PPQ): tempo meta, optional time signature, then
+ * notes sorted by tick with note-offs before note-ons at the same tick (so a re-attacked pitch is released
+ * first). Velocities are rounded and clamped to 1..127; zero-length and negative-tick notes are skipped.
+ */
+export const encodeMidiNotes = (notes: MidiNoteEvent[], bpm: number, opts: EncodeMidiNotesOptions = {}): Uint8Array => {
+  const tempoBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : 120;
+  const track: number[] = [];
+  track.push(0x00, 0xff, 0x51, 0x03, ...u32(Math.round(60000000 / tempoBpm)).slice(1));
+  if (opts.meter) track.push(0x00, ...timeSignatureMeta(opts.meter));
+
+  type Message = { tick: number; on: boolean; pitch: number; velocity: number };
+  const messages: Message[] = [];
+  for (const note of notes) {
+    const tick = Math.round(note.tick);
+    const duration = Math.round(note.durationTicks);
+    if (!Number.isFinite(tick) || !Number.isFinite(duration) || tick < 0 || duration <= 0) continue;
+    const pitch = Math.min(127, Math.max(0, Math.round(note.pitch)));
+    messages.push({ tick, on: true, pitch, velocity: clampVelocity(note.velocity) });
+    messages.push({ tick: tick + duration, on: false, pitch, velocity: 0 });
+  }
+  messages.sort((a, b) => a.tick - b.tick || Number(a.on) - Number(b.on) || a.pitch - b.pitch);
+
+  let last = 0;
+  for (const m of messages) {
+    track.push(...vlq(m.tick - last), m.on ? 0x90 : 0x80, m.pitch & 0x7f, m.velocity & 0x7f);
+    last = m.tick;
+  }
+  const end = Math.max(last, Number.isFinite(opts.lengthTicks) ? Math.round(opts.lengthTicks as number) : 0);
+  track.push(...vlq(end - last), 0xff, 0x2f, 0x00);
+
+  return new Uint8Array([
+    ...ascii('MThd'),
+    ...u32(6),
+    ...u16(0),
+    ...u16(1),
+    ...u16(TICKS_PER_QUARTER),
+    ...ascii('MTrk'),
+    ...u32(track.length),
+    ...track
+  ]);
+};
+
+/** A rhythm pattern voiced by its harmony slots as an SMF, with the pattern's meter and full loop length. */
+export const rhythmToMidi = (pattern: RhythmPattern, slots: HarmonySlot[], tuning: Tuning, bpm: number): Uint8Array =>
+  encodeMidiNotes(rhythmToMidiNotes(pattern, slots, tuning), bpm, {
+    meter: pattern.meter,
+    lengthTicks: patternLengthTicks(pattern)
+  });
