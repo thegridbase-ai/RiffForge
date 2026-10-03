@@ -10,6 +10,8 @@ describe('engine barrel', () => {
       'generateVoicings',
       'findClosestVoicing',
       'optimizeSequence',
+      'generateRhythm',
+      'rhythmToPlaybackEvents',
       'fromLegacyNotes',
       'nameVoicing',
       'DEFAULT_HAND_PROFILE'

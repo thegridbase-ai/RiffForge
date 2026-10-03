@@ -16,3 +16,4 @@ export * from './naming';
 export * from './playability';
 export * from './generateVoicings';
 export * from './transition';
+export * from './rhythm';
