@@ -98,3 +98,15 @@ describe('buildChordExplorerUrl', () => {
     expect(shapeToGvParam([null, 13, 15, null, 10, 0])).toBe('x-13-15-x-10-0');
   });
 });
+
+describe('parseRoot fallback', () => {
+  it('rejects ordinary words that only start with a note letter', () => {
+    expect(parseRoot('Drop Ghost', 'm2 Clash')).toBe('E');
+    expect(parseRoot('Diminished Phrygian', 'Dim/b2')).toBe('E');
+  });
+
+  it('reads flat roots and returns sharps', () => {
+    expect(parseRoot('Bb(VI)', '')).toBe('A#');
+    expect(parseRoot('Ebm7', '')).toBe('D#');
+  });
+});

@@ -7,6 +7,7 @@ import { fromRiffForgeTab, shapeToMidi } from '../engine/shape';
 import { midiToName, pitchClass, parsePitchClass, parseNoteName } from '../engine/pitch';
 import { findBestFingering } from '../engine/fingering';
 import { NOTES } from '../constants';
+import { buildExplorerUrl } from './chordExplorer';
 import { Chord, TuningMode } from '../types';
 
 const CHORD_DIR = join(__dirname, '..', 'public', 'chords');
@@ -139,5 +140,42 @@ describe('card helpers', () => {
     expect(shapeDistance([3, 5, 5, null, null, null], [3, 5, 5, null, null, null])).toBe(0);
     expect(shapeDistance([3, 5, null, null, null, null], [3, 5, 5, null, null, null])).toBeCloseTo(1 / 6, 9);
     expect(shapeDistance([null, null, null, 0, 3, null], [3, 5, 5, null, null, null])).toBeCloseTo(5 / 6, 9);
+  });
+});
+
+describe('Chord Explorer target', () => {
+  it('links Drop Ghost to the selected root, not the D of its nickname', () => {
+    const ghost = find('drop-melodic.json', 'drop-melodic-1');
+    for (const root of ['G', 'C']) {
+      const resolved = resolveLibraryChord(ghost, root, TuningMode.DROP, DEFAULT_HAND_PROFILE);
+      expect(resolved.voicing!.explorer).toEqual({ root, type: 'minor' });
+      expect(buildExplorerUrl(resolved.voicing!.explorer)).toBe(`https://chords.thegridbase.com/?root=${root}&type=minor`);
+    }
+  });
+
+  it('links every card by its sounded root and never calls a sus2 sound minor', () => {
+    let sus2 = 0;
+    for (const { mode, chord } of allEntries()) {
+      for (const root of NOTES) {
+        const resolved = resolveLibraryChord(chord, root, mode, DEFAULT_HAND_PROFILE);
+        if (!resolved.voicing) continue;
+        expect(resolved.voicing.explorer.root).toBe(root);
+        if (/sus2/.test(resolved.voicing.soundsAs)) {
+          sus2++;
+          expect(resolved.voicing.explorer.type).toBe('sus2');
+        }
+      }
+    }
+    expect(sus2).toBeGreaterThan(0);
+  });
+
+  it('omits the type for sounds Chord Explorer has no type for', () => {
+    const omen = find('standard-dark.json', 'dark-1');
+    const resolved = resolveLibraryChord(omen, 'E', TuningMode.STANDARD, DEFAULT_HAND_PROFILE);
+    expect(resolved.voicing!.soundsAs).toBe('E5(b9)');
+    expect(resolved.voicing!.explorer).toEqual({ root: 'E', type: undefined });
+    expect(buildExplorerUrl(resolved.voicing!.explorer, resolved.voicing!.shape)).toBe(
+      `https://chords.thegridbase.com/?root=E&gv=${resolved.voicing!.shape.map((f) => (f === null ? 'x' : f)).join('-')}`
+    );
   });
 });

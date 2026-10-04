@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Chord } from '../types';
 import type { Tuning } from '../engine/types';
-import { buildChordExplorerUrl } from '../utils/chordExplorer';
+import { buildChordExplorerUrl, buildExplorerUrl } from '../utils/chordExplorer';
 import { VoicingTab } from './VoicingTab';
 
 interface ChordCardProps {
@@ -441,8 +441,12 @@ export const ChordCard: React.FC<ChordCardProps> = ({
             <div className="flex items-center gap-2">
               <span className="font-mono text-[10px] text-neutral-400">TABLATURE</span>
               <motion.a
-                // Chord Explorer is E Standard only, so a Drop D shape would sound different there
-                href={buildChordExplorerUrl(chord, tuning.id === 'e-standard' ? chord.voicing?.shape : undefined)}
+                // Link by what sounds; Chord Explorer is E Standard only, so a Drop D shape stays out of the link
+                href={
+                  chord.voicing
+                    ? buildExplorerUrl(chord.voicing.explorer, tuning.id === 'e-standard' ? chord.voicing.shape : undefined)
+                    : buildChordExplorerUrl(chord)
+                }
                 target="_blank"
                 rel="noopener"
                 aria-label="Open in Chord Explorer"

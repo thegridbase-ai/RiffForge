@@ -11,6 +11,7 @@ import { explainCost } from '../engine/playability';
 import { handProfileHash } from '../engine/handProfile';
 import { Chord, LibraryVoicing, TuningMode } from '../types';
 import { transposeChordLabels } from './musicTheory';
+import { explorerTypeForIntervals } from './chordExplorer';
 
 /** The JSON drop files are authored in Drop D, the standard files in E Standard. */
 export const tuningForMode = (mode: TuningMode): Tuning => (mode === TuningMode.DROP ? DROP_D : E_STANDARD);
@@ -72,7 +73,8 @@ const toLibraryVoicing = (
   v: GeneratedVoicing,
   tuning: Tuning,
   profile: HandProfile,
-  relaxed: string[] | null
+  relaxed: string[] | null,
+  targetRoot: string
 ): LibraryVoicing => ({
   shape: [...v.shape],
   tab: toRiffForgeTab(v.shape),
@@ -83,7 +85,12 @@ const toLibraryVoicing = (
   // Audio comes from the same shape as the tab
   notes: shapeToMidi(v.shape, tuning).map(midiToName),
   relaxed,
-  explain: explainCost(v.breakdown, v.fingering, profile)
+  explain: explainCost(v.breakdown, v.fingering, profile),
+  // Link by what sounds, never by the curated label ("Drop Ghost" is not a D chord)
+  explorer: {
+    root: targetRoot,
+    type: explorerTypeForIntervals(v.midi.map((m) => pitchClass(m - (parsePitchClass(targetRoot) ?? 0))))
+  }
 });
 
 const cache = new Map<string, LibraryResolution>();
@@ -132,7 +139,7 @@ export const resolveLibraryVoicing = (
       };
       // Candidates arrive in a deterministic order; keep the first on ties
       const best = result.voicings.reduce((a, b) => (score(b) < score(a) ? b : a));
-      resolution = { voicing: toLibraryVoicing(best, tuning, profile, relaxed), unplayableReason: null };
+      resolution = { voicing: toLibraryVoicing(best, tuning, profile, relaxed, targetRoot), unplayableReason: null };
     }
   } catch {
     resolution = { voicing: null, unplayableReason: 'This library entry has no readable notes.' };

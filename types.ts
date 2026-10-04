@@ -1,4 +1,5 @@
 import type { FingerNumber } from './engine/types';
+import type { ChordExplorerType } from './utils/chordExplorer';
 
 /** An engine-generated shape for a library card. Tab and audio both derive from `shape`. */
 export interface LibraryVoicing {
@@ -16,6 +17,8 @@ export interface LibraryVoicing {
   /** Musical relaxations applied to fit the hand, or null when the recipe is exact. */
   relaxed: string[] | null;
   explain: string[];
+  /** Chord Explorer link target from what sounds: the selected root, plus a type only when one fits. */
+  explorer: { root: string; type?: ChordExplorerType };
 }
 
 export interface Chord {
