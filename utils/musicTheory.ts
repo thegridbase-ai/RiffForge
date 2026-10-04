@@ -1,43 +1,40 @@
-import { NOTES } from '../constants';
 import { Chord } from '../types';
+import { parsePitchClass, pitchClass, pitchClassName } from '../engine/pitch';
 
+// A root at the start of a nickname: note letter, optional accidental, then a space, a digit or a chord quality
+// ("Em Maj7", "Bb Maj7", "D Power"). Words that merely start with A-G ("Diminished", "Exotic") are not roots.
+const NICKNAME_ROOT = /^([A-G](?:#|b(?![a-z]))?)(?=$|[\s(\d]|m|M|maj|min|dim|aug|sus|add)/;
+
+// A subtext is a chord symbol tied to the curated key ("Em(add9)", "Bb(VI)", "F#dim(vii)") when a note name is
+// followed by a chord quality, not a word that merely starts with A-G ("Dim/b2").
 const ROOTED_SUBTEXT = /^[A-G][#b]?(?=$|[\s(/\d]|m|maj|min|dim|aug|sus|add|M)/;
-const QUALITY_START = /^(m(?!\d)|maj|min|dim|aug|sus|Sus|add|M|\(|7|9|11|13|5(?!th))/;
 
-const getSemitoneDistance = (fromNote: string, toNote: string): number => {
-  const fromIndex = NOTES.indexOf(fromNote);
-  const toIndex = NOTES.indexOf(toNote);
-  if (fromIndex === -1 || toIndex === -1) return 0;
-  return toIndex - fromIndex;
-};
+export interface LibraryLabels {
+  /** Curated nickname without the "Drop " prefix, its root (if any) moved to the selected root. */
+  nickname: string;
+  /** Curated descriptive subtext ("m2 Clash", "5th"); empty when it was a key-bound chord symbol. */
+  detail: string;
+}
 
 /**
- * Moves a curated card's name and subtext to the selected root. Shapes and sounding notes are no
- * longer transposed here: they come from the engine (utils/libraryVoicing.ts).
+ * Labels for a curated card on the selected root. The title of a resolved card is the engine's name for what
+ * sounds; these are the secondary labels. Key-bound symbols such as "Bb(VI)" are dropped because the card's root
+ * follows the selected root, so a Roman numeral or a stored symbol would describe a different chord.
  */
-export const transposeChordLabels = (chord: Chord, targetRoot: string): { name: string; subtext: string } => {
-  const distance = getSemitoneDistance(chord.baseRoot, targetRoot);
+export const libraryLabels = (chord: Pick<Chord, 'name' | 'subtext' | 'baseRoot'>, targetRoot: string): LibraryLabels => {
+  const base = parsePitchClass(chord.baseRoot);
+  const target = parsePitchClass(targetRoot);
+  const shift = base === null || target === null ? 0 : target - base;
 
-  // A subtext is rooted when a note name is followed by a chord quality ("Em(add9)", "Bb(VI)"), not a
-  // word that merely starts with A-G ("Dim/b2").
-  const isRooted = ROOTED_SUBTEXT.test(chord.subtext);
-  // Glue only real chord qualities to the root; "b2" glued to E would read as E-flat
-  const separator = QUALITY_START.test(chord.subtext) ? '' : ' ';
-  const subtext = isRooted
-    ? chord.subtext.replace(/^[A-G][#b]?/, targetRoot)
-    : `${targetRoot}${separator}${chord.subtext}`;
-
-  let name = chord.name;
-  if (distance !== 0) {
-    const noteMatch = chord.name.match(/^([A-G]#?)(\s|$|m|M|Major|Minor|Maj|Min|7|9|add|sus|dim|aug|maj|min)/i);
-    if (noteMatch) {
-      const originalIndex = NOTES.indexOf(noteMatch[1]);
-      if (originalIndex !== -1) {
-        const newIndex = ((originalIndex + (distance % 12)) + 12) % 12;
-        name = chord.name.replace(/^[A-G]#?/i, NOTES[newIndex]);
-      }
-    }
+  let nickname = chord.name.trim().replace(/^drop\s+/i, '');
+  const match = nickname.match(NICKNAME_ROOT);
+  if (match) {
+    const pc = parsePitchClass(match[1]);
+    if (pc !== null) nickname = `${pitchClassName(pitchClass(pc + shift))}${nickname.slice(match[1].length)}`;
   }
 
-  return { name, subtext };
+  const subtext = chord.subtext.trim();
+  const keyBound = ROOTED_SUBTEXT.test(subtext);
+  const redundant = subtext !== '' && nickname.toLowerCase().includes(subtext.toLowerCase());
+  return { nickname, detail: keyBound || redundant ? '' : subtext };
 };

@@ -54,13 +54,42 @@ describe('resolveLibraryChord', () => {
     expect(resolved.fretboard).not.toBe('3 5 7 3 3 3');
   });
 
-  it('keeps ids, descriptions and related chords, and moves labels to the root', () => {
+  it('keeps ids, descriptions and related chords; the title is the sound, the nickname is secondary', () => {
     const omen = find('standard-dark.json', 'dark-1');
     const resolved = resolveLibraryChord(omen, 'F#', TuningMode.STANDARD, DEFAULT_HAND_PROFILE);
     expect(resolved.id).toBe('dark-1');
     expect(resolved.description).toBe(omen.description);
     expect(resolved.relatedChords).toBe(omen.relatedChords);
-    expect(resolved.subtext).toBe('F# m2 Clash');
+    expect(resolved.name).toBe('F#5(b9)');
+    expect(resolved.name).toBe(resolved.voicing!.soundsAs);
+    expect(resolved.subtext).toBe('The Omen · m2 Clash');
+  });
+
+  it('never shows a title or nickname root that differs from what sounds (all entries, 12 roots, both tunings)', () => {
+    const leadingRoot = (text: string): string | null => {
+      const match = text.match(/^([A-G][#b]?)/);
+      return match ? match[1] : null;
+    };
+    for (const { mode, chord } of allEntries()) {
+      for (const root of NOTES) {
+        const resolved = resolveLibraryChord(chord, root, mode, DEFAULT_HAND_PROFILE);
+        expect(resolved.voicing).toBeDefined();
+        expect(resolved.name).toBe(resolved.voicing!.soundsAs);
+        expect(leadingRoot(resolved.name)).toBe(root);
+        expect(leadingRoot(resolved.voicing!.soundsAs)).toBe(root);
+        const nickname = resolved.subtext.split(' · ')[0];
+        const nicknameRoot = nickname.match(/^([A-G](?:#|b(?![a-z]))?)(?=$|[\s(\d]|m|M|maj|min|dim|aug|sus|add)/);
+        if (nicknameRoot) expect(nicknameRoot[1]).toBe(root);
+        expect(resolved.subtext).not.toMatch(/\((?:i|ii|iii|iv|v|vi|vii|I|II|III|IV|V|VI|VII)\)/);
+      }
+    }
+  });
+
+  it('gives the corrected minor add9 rows their minor third', () => {
+    const am = find('standard-melodic.json', 'melodic-3');
+    const gm = find('drop-melodic.json', 'drop-melodic-3');
+    expect(resolveLibraryChord(am, 'A', TuningMode.STANDARD, DEFAULT_HAND_PROFILE).name).toBe('Am(add9)');
+    expect(resolveLibraryChord(gm, 'G', TuningMode.DROP, DEFAULT_HAND_PROFILE).name).toBe('Gm(add9)');
   });
 
   it('honours the recipe: the Omen is root, b2 and 5 with the root in the bass', () => {

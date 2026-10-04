@@ -187,7 +187,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 <AnimatePresence mode="wait">
                   <motion.h3
                     key={chord.name}
-                    className={`font-['Oswald'] text-2xl uppercase tracking-wide text-neutral-100`}
+                    className={`font-['Oswald'] text-2xl tracking-wide text-neutral-100 break-words`}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}

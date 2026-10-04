@@ -10,7 +10,7 @@ import { midiToName, parseNoteName, parsePitchClass, pitchClass } from '../engin
 import { explainCost } from '../engine/playability';
 import { handProfileHash } from '../engine/handProfile';
 import { Chord, LibraryVoicing, TuningMode } from '../types';
-import { transposeChordLabels } from './musicTheory';
+import { libraryLabels } from './musicTheory';
 import { explorerTypeForIntervals } from './chordExplorer';
 
 /** The JSON drop files are authored in Drop D, the standard files in E Standard. */
@@ -150,8 +150,9 @@ export const resolveLibraryVoicing = (
 };
 
 /**
- * A curated chord as displayed for the selected root and tuning: labels moved to the root, and tab plus
- * audio notes from one engine shape. Ids are untouched so favorites keep working.
+ * A curated chord as displayed for the selected root and tuning. The title (`name`) is the engine's name for what
+ * sounds; the curated nickname and descriptive subtext become the secondary line, so a title can never contradict
+ * the sound. Tab and audio notes come from one engine shape. Ids are untouched so favorites keep working.
  */
 export const resolveLibraryChord = (
   chord: Chord,
@@ -159,11 +160,12 @@ export const resolveLibraryChord = (
   tuningMode: TuningMode,
   profile: HandProfile
 ): Chord => {
-  const labels = transposeChordLabels(chord, targetRoot);
+  const { nickname, detail } = libraryLabels(chord, targetRoot);
   const { voicing, unplayableReason } = resolveLibraryVoicing(chord, targetRoot, tuningForMode(tuningMode), profile);
   return {
     ...chord,
-    ...labels,
+    name: voicing ? voicing.soundsAs : nickname,
+    subtext: voicing ? [nickname, detail].filter(Boolean).join(' · ') : detail,
     notes: voicing ? voicing.notes : [],
     fretboard: voicing ? voicing.tab : undefined,
     voicing: voicing ?? undefined,

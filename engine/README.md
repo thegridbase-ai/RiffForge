@@ -157,6 +157,19 @@ Defaults chosen where the spec left room. Change them deliberately; most have te
 - `tooFastForProfile` is a warning only: it fires when the fastest attack rate at the given BPM exceeds the profile's
   comfortable sixteenth-note tempo.
 
+- RiffForge app defaults (outside the engine, recorded here so they live next to the engine's):
+  - A library card's title is the engine's name for what sounds. The curated nickname ("Drop " removed, its root
+    moved to the selected root) and descriptive subtext ("m2 Clash") form the secondary line; key-bound symbols such
+    as "Bb(VI)" or "Em(add9)" are dropped because the card's root follows the selected root.
+  - A library card shows the generated shape closest to its curated idea: bass register (2 per octave, capped at 2
+    octaves), note count (0.5 per note), the curated tab moved rigidly to the new root (0 to 1) and neck position
+    (0.08 per fret, capped at 10 frets); engine cost decides between equally faithful shapes.
+  - Chord Explorer links use the selected root and a type from the first engine family whose pitch classes match
+    (bass and note count ignored), else the largest full formula present without a contradicting third. Power chords,
+    dyads, the tritone, fourths, quartal stacks and clusters get no type. The shape travels as gv only in E Standard.
+  - Library data: the "Am Add9" and "Drop Gm Add9" rows (and their related copies) had no minor third, so they
+    sounded sus2; their notes now include the b3. "Drop Fm Mediant" had a fourth where its minor third belongs.
+
 ## Heuristics that are not research-backed
 
 - All cost weights in `weights.ts` and `TRANSITION_WEIGHTS` (their relative order follows ISMIR 2023: finger
