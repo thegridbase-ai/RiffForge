@@ -119,6 +119,22 @@ describe('riffStore', () => {
     expect(state.currentStep).toBe(-1);
   });
 
+  it('keeps the shown shape and tuning with a step, and drops invalid ones', async () => {
+    const useRiffStore = await freshStore();
+    useRiffStore.getState().addStep({ ...ghost, shape: [0, 2, 4, 0, 0, 0], tuningId: 'e-standard' });
+    useRiffStore.getState().addStep({ ...ghost, shape: [0, 2, 4], tuningId: 'e-standard' });
+    useRiffStore.getState().addStep({ ...ghost, shape: [0, 2, 4, 0, 0, 0], tuningId: 'banjo' });
+    const [withShape, short, unknown] = useRiffStore.getState().steps;
+    expect(withShape.shape).toEqual([0, 2, 4, 0, 0, 0]);
+    expect(withShape.tuningId).toBe('e-standard');
+    expect(short.shape).toBeUndefined();
+    expect(unknown.shape).toBeUndefined();
+
+    const reloaded = await freshStore();
+    expect(reloaded.getState().steps[0].shape).toEqual([0, 2, 4, 0, 0, 0]);
+    expect(reloaded.getState().steps[1].shape).toBeUndefined();
+  });
+
   it('respells legacy flat note names from stored v1 riffs so MIDI export works', async () => {
     localStorage.setItem(RIFF_STORAGE_KEY, JSON.stringify({
       steps: [{ key: 'old-1', baseId: 'drop-melodic-2', name: 'Drop Bb Maj7', subtext: 'Bb(VI)', notes: ['Bb2', 'D3', 'F3', 'A3', '??'] }],

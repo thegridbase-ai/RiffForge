@@ -44,7 +44,7 @@ The hand profile is comfort guidance, not a medical or safety assessment. Stop i
 | `playability.ts` | Full cost (physical, right hand, musical), novelty score, human cost explanations. |
 | `generateVoicings.ts` | Windowed, pruned search for playable voicings; diversification; empty-result diagnosis. |
 | `transition.ts` | Transition cost between fingered shapes; exact minimax Viterbi; `optimizeSequence`. |
-| `rhythm/` | Rhythm grid math, style presets, seeded generator, variation, editing helpers, validation, playback and MIDI note events. |
+| `rhythm/` | Rhythm grid math, style presets, seeded generator, variation, editing helpers, validation, progression arrangement, playback and MIDI note events. |
 | `index.ts` | Public barrel and `ENGINE_VERSION`. |
 
 ## Main entry points
@@ -62,7 +62,8 @@ resolveFamilyId(id)                   // registered and relaxed ('power5_b2~anyB
 transitionCost / optimizeSequence(candidates, timing, { profile }) / describeTransition
 generateRhythm / mutateRhythm / regenerateRhythm / validateRhythm / setSlotCount / buildGroups
 toggleHit / cycleAccent / togglePalmMute / clearHit / eventAtUnit / eventsInUnit
-rhythmToPlaybackEvents / rhythmToMidiNotes
+rhythmToPlaybackEvents / rhythmToMidiNotes(pattern, slots, tuning, ..., { slotAt })
+arrangeProgression(pattern, chordCount, 'bar' | 'halfBar') / progressionChangeBeats(arrangement)
 profileFromCalibration / calibrationFromProfile / validateHandProfile / migrateHandProfile / handProfileHash
 ```
 
@@ -154,6 +155,11 @@ Defaults chosen where the spec left room. Change them deliberately; most have te
 - Rhythm playback: base velocity 0.7, accent +0.12 / +0.22, palm mute x0.75 velocity and 35 percent duration, dead
   notes 0.3 velocity and at most 30 ms, ties extend the sounding note. Pedal hits use the active slot's pedal note,
   falling back to its lowest sounding note.
+- Progressions (`arrangeProgression`): the figure repeats until it and the progression line up again (least common
+  multiple of their lengths, capped at 64 bars, else rounded up to whole figures), so the loop restarts on the first
+  chord and the first beat. With `slotAt`, playback and MIDI pick the chord by time (bar or half bar), not by the
+  hit's slot index, and pedal hits follow that chord. `progressionChangeBeats` gives each chord the time from its
+  last attack to the next chord's first attack, for `optimizeSequence`.
 - `tooFastForProfile` is a warning only: it fires when the fastest attack rate at the given BPM exceeds the profile's
   comfortable sixteenth-note tempo.
 

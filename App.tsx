@@ -152,14 +152,16 @@ const App: React.FC = () => {
   const canAddToRiff = riffSteps.length < MAX_RIFF_STEPS;
 
   const handleAddToRiff = useCallback((chord: Chord) => {
-    // Snapshot the chord as currently displayed (already transposed)
+    // Snapshot the chord as currently displayed, with its shape so the Rhythm Lab plays this exact voicing
     addRiffStep({
       id: chord.id,
       name: chord.name,
       subtext: chord.subtext,
-      notes: chord.notes
+      notes: chord.notes,
+      shape: chord.voicing?.shape,
+      tuningId: chord.voicing ? tuning.id : undefined
     });
-  }, [addRiffStep]);
+  }, [addRiffStep, tuning.id]);
 
   useEffect(() => {
     resetLockState();

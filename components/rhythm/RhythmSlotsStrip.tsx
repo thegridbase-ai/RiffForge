@@ -4,6 +4,7 @@ import { getTuning } from '../../engine/tuning';
 import { degreesByString } from '../../engine/naming';
 import { midiToName, parsePitchClass } from '../../engine/pitch';
 import { toRiffForgeTab } from '../../engine/shape';
+import { useRiffStore } from '../../stores/riffStore';
 import { MAX_RHYTHM_SLOTS, useRhythmStore, type RhythmSlot } from '../../stores/rhythmStore';
 import { displayFingering, slotCandidates, slotShapesKey } from '../../utils/rhythmSlots';
 import { VoicingTab } from '../VoicingTab';
@@ -44,6 +45,7 @@ export const RhythmSlotsStrip: React.FC<RhythmSlotsStripProps> = ({ theme, isDis
   const removeSlot = useRhythmStore((s) => s.removeSlot);
   const setSlotShape = useRhythmStore((s) => s.setSlotShape);
   const optimizeSlots = useRhythmStore((s) => s.optimizeSlots);
+  const riffStepCount = useRiffStore((s) => s.steps.length);
 
   const optimized = optimization !== null && optimization.shapesKey === slotShapesKey(slots) ? optimization : null;
 
@@ -68,6 +70,11 @@ export const RhythmSlotsStrip: React.FC<RhythmSlotsStripProps> = ({ theme, isDis
     onAnnounce(out.ok === true ? `Fingerings optimized. ${out.text}` : out.message);
   };
 
+  const handleCopyRiff = () => {
+    const made = useRhythmStore.getState().useRiffBarChords(tuning, profile);
+    onAnnounce(made > 0 ? `${made} RiffBar chord${made === 1 ? '' : 's'} copied into the slots.` : 'No playable RiffBar chords to copy.');
+  };
+
   const handleRemove = (slot: RhythmSlot, index: number) => {
     removeSlot(slot.id);
     onAnnounce(`Removed slot ${index + 1}, ${slot.label}.`);
@@ -79,15 +86,26 @@ export const RhythmSlotsStrip: React.FC<RhythmSlotsStripProps> = ({ theme, isDis
         <h3 className={SECTION_LABEL}>
           Chord slots <span className="text-neutral-300">{slots.length}/{MAX_RHYTHM_SLOTS}</span>
         </h3>
-        <button
-          type="button"
-          onClick={handleOptimize}
-          disabled={slots.length < 2}
-          title={slots.length < 2 ? 'Needs at least two slots' : 'Choose the voicings whose hardest change is easiest at this tempo'}
-          className={pillClass(theme)}
-        >
-          Optimize fingerings
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCopyRiff}
+            disabled={riffStepCount === 0}
+            title={riffStepCount === 0 ? 'Add chords to the RiffBar first' : 'Replace the slots with the first four different RiffBar chords'}
+            className={pillClass(theme)}
+          >
+            Copy from RiffBar
+          </button>
+          <button
+            type="button"
+            onClick={handleOptimize}
+            disabled={slots.length < 2}
+            title={slots.length < 2 ? 'Needs at least two slots' : 'Choose the voicings whose hardest change is easiest at this tempo'}
+            className={pillClass(theme)}
+          >
+            Optimize fingerings
+          </button>
+        </div>
       </div>
 
       {optimized && (
@@ -101,8 +119,8 @@ export const RhythmSlotsStrip: React.FC<RhythmSlotsStripProps> = ({ theme, isDis
           <div className="flex-1 min-w-0">
             <p className="text-sm text-neutral-200">No chord slots yet.</p>
             <p className="mt-1 text-sm text-neutral-400 font-light leading-snug">
-              Send voicings here from the Voicing Finder, or press &ldquo;Use RiffBar chords as slots&rdquo;. Up to four
-              slots; accented hits move the harmony between them.
+              Send voicings here from the Voicing Finder, or copy the RiffBar. Up to four slots; accented hits move the
+              harmony between them. Slots stay put when the RiffBar changes.
             </p>
             {implicitSlot && (
               <p className="mt-2 font-mono text-[11px] text-neutral-400">

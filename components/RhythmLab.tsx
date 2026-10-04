@@ -2,32 +2,44 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { audioEngine } from '../services/audioEngine';
 import { useChordStore } from '../stores/chordStore';
 import { useRiffStore } from '../stores/riffStore';
-import { scheduleRhythmRestart, useRhythmHandProfile, useRhythmStore } from '../stores/rhythmStore';
-import { gridUnitTicks } from '../engine/rhythm/grid';
+import { currentProgression, scheduleRhythmRestart, useRhythmHandProfile, useRhythmStore } from '../stores/rhythmStore';
+import { gridUnitTicks, patternLengthTicks } from '../engine/rhythm/grid';
 import { rhythmToPlaybackEvents } from '../engine/rhythm/playback';
+import { arrangeProgression, type ProgressionArrangement, type ProgressionChange } from '../engine/rhythm/progression';
 import { validateRhythm } from '../engine/rhythm/validate';
-import type { HarmonySlot } from '../engine/types';
+import type { HarmonySlot, RhythmPattern } from '../engine/types';
 import { tuningForMode } from '../utils/libraryVoicing';
 import { rhythmToMidi } from '../utils/midi';
-import { clickTimes, implicitPowerSlot, loopSeconds, secondsPerTick, toHarmonySlots } from '../utils/rhythmSlots';
+import { clickTimes, distinctChords, implicitPowerSlot, loopSeconds, secondsPerTick, toHarmonySlots } from '../utils/rhythmSlots';
 import { RhythmStylePanel } from './rhythm/RhythmStylePanel';
 import { RhythmTransport } from './rhythm/RhythmTransport';
-import { RhythmSlotsStrip } from './rhythm/RhythmSlotsStrip';
+import { RhythmHarmony } from './rhythm/RhythmHarmony';
 import { RhythmGrid } from './rhythm/RhythmGrid';
 import { rhythmTheme } from './rhythm/theme';
 
 /** Restart debounce while a slider is dragged during playback. */
 const RESTART_DELAY_MS = 60;
 
+/** Chords that change by time: the progression length and how often it moves. */
+interface TimedProgression {
+  count: number;
+  change: ProgressionChange;
+}
+
+/** The figure laid over the progression, or null when the harmony follows slot indexes (own slots, accents). */
+const arrange = (figure: RhythmPattern, timed: TimedProgression | null): ProgressionArrangement | null =>
+  timed ? arrangeProgression(figure, timed.count, timed.change) : null;
+
 /**
- * Metal Rhythm Lab: seeded rhythm patterns over up to four chord slots, with playback, metronome, MIDI
- * export, an editable grid and the fingering optimizer. Self-contained: reads the chord, riff and rhythm stores.
+ * Metal Rhythm Lab: seeded rhythm patterns over the RiffBar progression (by default) or up to four own chord
+ * slots, with playback, metronome, MIDI export, an editable grid and the fingering optimizer. Self-contained:
+ * reads the chord, riff and rhythm stores.
  */
 export const RhythmLab: React.FC = () => {
   const isDistorted = useChordStore((s) => s.isDistorted);
   const tuningMode = useChordStore((s) => s.tuningMode);
   const selectedRoot = useChordStore((s) => s.selectedRoot);
-  const riffStepCount = useRiffStore((s) => s.steps.length);
+  const riffSteps = useRiffStore((s) => s.steps);
   const profile = useRhythmHandProfile();
 
   const pattern = useRhythmStore((s) => s.pattern);
@@ -35,6 +47,9 @@ export const RhythmLab: React.FC = () => {
   const bpm = useRhythmStore((s) => s.bpm);
   const isPlaying = useRhythmStore((s) => s.isPlaying);
   const metronomeOn = useRhythmStore((s) => s.metronomeOn);
+  const harmonySource = useRhythmStore((s) => s.harmonySource);
+  const chordChange = useRhythmStore((s) => s.chordChange);
+  const overrides = useRhythmStore((s) => s.progressionOverrides);
   const setBpm = useRhythmStore((s) => s.setBpm);
   const setMetronome = useRhythmStore((s) => s.setMetronome);
   const setIsPlaying = useRhythmStore((s) => s.setIsPlaying);
@@ -44,11 +59,25 @@ export const RhythmLab: React.FC = () => {
   const theme = rhythmTheme(isDistorted);
   const tuning = tuningForMode(tuningMode);
   const implicitSlot = useMemo(() => implicitPowerSlot(selectedRoot, tuning, profile), [selectedRoot, tuning, profile]);
-  const harmony: HarmonySlot[] = useMemo(
-    () => (slots.length > 0 ? toHarmonySlots(slots) : implicitSlot ? toHarmonySlots([implicitSlot]) : []),
-    [slots, implicitSlot]
+  const progression = useMemo(() => currentProgression(overrides, riffSteps, tuning, profile), [overrides, riffSteps, tuning, profile]);
+
+  // What the chord hits play: own slots, the RiffBar chord of the bar, or the RiffBar's first different chords
+  const fromRiff = harmonySource === 'riffbar' && progression.length > 0;
+  const timedChange = fromRiff && chordChange !== 'accents' ? chordChange : null;
+  const labChords = useMemo(
+    () => (harmonySource === 'slots' ? slots : fromRiff ? (timedChange ? progression : distinctChords(progression)) : []),
+    [harmonySource, slots, fromRiff, timedChange, progression]
   );
-  const slotLabels = useMemo(() => slots.map((s) => s.label), [slots]);
+  const harmony: HarmonySlot[] = useMemo(
+    () => (labChords.length > 0 ? toHarmonySlots(labChords) : implicitSlot ? toHarmonySlots([implicitSlot]) : []),
+    [labChords, implicitSlot]
+  );
+  const timed: TimedProgression | null = useMemo(
+    () => (timedChange ? { count: progression.length, change: timedChange } : null),
+    [timedChange, progression.length]
+  );
+  const arrangement = useMemo(() => arrange(pattern, timed), [pattern, timed]);
+  const slotLabels = useMemo(() => (timed ? [] : labChords.map((s) => s.label)), [timed, labChords]);
 
   const [announcement, setAnnouncement] = useState('');
   const announce = useCallback((message: string) => {
@@ -63,20 +92,35 @@ export const RhythmLab: React.FC = () => {
     if (dropped > 0) announce(`${dropped} slot${dropped === 1 ? '' : 's'} had no playable voicing in ${tuning.name} and were removed.`);
   }, [tuning, profile, announce]);
 
-  const latest = useRef({ harmony, tuning });
-  latest.current = { harmony, tuning };
+  // The figure needs as many harmony slots as the lab plays (RiffBar, tuning or hand profile changed)
+  useEffect(() => {
+    useRhythmStore.getState().syncHarmony();
+  }, [progression, harmonySource, chordChange]);
+
+  const latest = useRef({ harmony, tuning, timed });
+  latest.current = { harmony, tuning, timed };
 
   const play = useCallback(() => {
     const state = useRhythmStore.getState();
-    const { pattern: current, bpm: tempo } = state;
-    const events = rhythmToPlaybackEvents(current, latest.current.harmony, latest.current.tuning, tempo);
+    const { pattern: figure, bpm: tempo } = state;
+    const arr = arrange(figure, latest.current.timed);
+    const loop = arr ? arr.pattern : figure;
+    const events = rhythmToPlaybackEvents(loop, latest.current.harmony, latest.current.tuning, tempo, arr ? { slotAt: arr.slotAt } : {});
+    const unitTicks = gridUnitTicks(figure.params.grid);
+    const figureUnits = Math.max(1, Math.round(patternLengthTicks(figure) / unitTicks));
     audioEngine.playRhythm(events, {
-      loopSeconds: loopSeconds(current, tempo),
+      loopSeconds: loopSeconds(loop, tempo),
       bpm: tempo,
-      clickTimes: clickTimes(current, tempo),
+      clickTimes: clickTimes(loop, tempo),
       metronome: state.metronomeOn,
-      stepSeconds: gridUnitTicks(current.params.grid) * secondsPerTick(tempo),
-      onStep: (unit) => useRhythmStore.getState().setPlayheadUnit(unit)
+      stepSeconds: unitTicks * secondsPerTick(tempo),
+      onStep: (unit) => {
+        // The grid shows the figure; the progression strip shows which chord of the loop is sounding
+        const store = useRhythmStore.getState();
+        store.setPlayheadUnit(unit % figureUnits);
+        const chord = arr ? arr.slotAt(unit * unitTicks) : -1;
+        if (store.playheadChord !== chord) store.setPlayheadChord(chord);
+      }
     });
   }, []);
 
@@ -116,7 +160,7 @@ export const RhythmLab: React.FC = () => {
   useEffect(() => {
     if (!useRhythmStore.getState().isPlaying) return;
     return scheduleRhythmRestart(play, RESTART_DELAY_MS);
-  }, [pattern, harmony, tuning, bpm, play]);
+  }, [pattern, harmony, timed, tuning, bpm, play]);
 
   useEffect(
     () => () => {
@@ -144,23 +188,19 @@ export const RhythmLab: React.FC = () => {
   };
 
   const handleExportMidi = () => {
-    const { pattern: current, bpm: tempo } = useRhythmStore.getState();
-    const bytes = rhythmToMidi(current, harmony, tuning, tempo);
+    const { pattern: figure, bpm: tempo } = useRhythmStore.getState();
+    const arr = arrange(figure, timed);
+    const bytes = rhythmToMidi(arr ? arr.pattern : figure, harmony, tuning, tempo, arr ? { slotAt: arr.slotAt } : {});
     const blob = new Blob([bytes], { type: 'audio/midi' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `rhythm-${current.params.style}-${tempo}bpm.mid`;
+    anchor.download = `rhythm-${figure.params.style}${arr ? `-riffbar-${arr.chordCount}ch` : ''}-${tempo}bpm.mid`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
     announce(`Exported ${anchor.download}.`);
-  };
-
-  const handleUseRiffChords = () => {
-    const made = useRhythmStore.getState().useRiffBarChords(tuning, profile);
-    announce(made > 0 ? `${made} RiffBar chord${made === 1 ? '' : 's'} loaded as slots.` : 'No playable RiffBar chords to load.');
   };
 
   const warnings = useMemo(
@@ -203,26 +243,26 @@ export const RhythmLab: React.FC = () => {
           isPlaying={isPlaying}
           metronomeOn={metronomeOn}
           bpm={bpm}
-          riffStepCount={riffStepCount}
           onPlayToggle={isPlaying ? stopPlayback : startPlayback}
           onMetronomeToggle={handleMetronome}
           onBpmChange={setBpm}
           onNewIdea={handleNewIdea}
           onMutate={handleMutate}
           onExportMidi={handleExportMidi}
-          onUseRiffChords={handleUseRiffChords}
         />
 
-        <RhythmSlotsStrip
+        <RhythmHarmony
           theme={theme}
           isDistorted={isDistorted}
           tuning={tuning}
           profile={profile}
           implicitSlot={implicitSlot}
+          progression={progression}
+          arrangement={arrangement}
           onAnnounce={announce}
         />
 
-        <RhythmGrid theme={theme} slotLabels={slotLabels} onAnnounce={announce} />
+        <RhythmGrid theme={theme} slotLabels={slotLabels} chordLane={harmonySource === 'riffbar' && chordChange !== 'accents'} onAnnounce={announce} />
 
         <div role="status" aria-live="polite" className="space-y-2">
           {warnings.map((w) => (

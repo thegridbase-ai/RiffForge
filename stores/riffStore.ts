@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { midiToName, parseNoteName } from '../engine/pitch';
+import { getTuning } from '../engine/tuning';
 
 export const RIFF_STORAGE_KEY = 'riffforge:riff:v1';
 export const MAX_RIFF_STEPS = 16;
@@ -14,7 +15,23 @@ export interface RiffStep {
   name: string;
   subtext: string;
   notes: string[];
+  /** The exact shape that was shown (frets low -> high) and its tuning, so the Rhythm Lab plays that voicing. */
+  shape?: (number | null)[];
+  tuningId?: string;
 }
+
+/** Shape and tuning are optional (older steps have none); both must be valid to be kept. */
+const voicingOf = (value: Record<string, unknown>): Pick<RiffStep, 'shape' | 'tuningId'> => {
+  const { shape, tuningId } = value;
+  if (typeof tuningId !== 'string' || !Array.isArray(shape)) return {};
+  const tuning = getTuning(tuningId);
+  const valid =
+    tuning !== undefined &&
+    shape.length === tuning.openMidi.length &&
+    shape.every((f) => f === null || (Number.isInteger(f) && (f as number) >= 0 && (f as number) <= 24)) &&
+    shape.some((f) => f !== null);
+  return valid ? { shape: [...(shape as (number | null)[])], tuningId } : {};
+};
 
 interface PersistedRiff {
   steps: RiffStep[];
@@ -70,7 +87,8 @@ const loadRiff = (): PersistedRiff => {
             baseId: step.baseId,
             name: step.name,
             subtext: step.subtext,
-            notes: normalizeNotes(step.notes)
+            notes: normalizeNotes(step.notes),
+            ...voicingOf(step as unknown as Record<string, unknown>)
           }))
       : [];
 
@@ -96,6 +114,8 @@ export interface RiffChordInput {
   name: string;
   subtext: string;
   notes: string[];
+  shape?: readonly (number | null)[];
+  tuningId?: string;
 }
 
 interface RiffStore {
@@ -134,7 +154,8 @@ export const useRiffStore = create<RiffStore>((set) => ({
         baseId: chord.id,
         name: chord.name,
         subtext: chord.subtext,
-        notes: [...chord.notes]
+        notes: [...chord.notes],
+        ...voicingOf({ shape: chord.shape ? [...chord.shape] : undefined, tuningId: chord.tuningId })
       };
       const steps = [...state.steps, step];
       saveRiff(steps, state.bpm);

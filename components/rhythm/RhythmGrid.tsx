@@ -30,6 +30,8 @@ const TOOL_NAMES: Record<EditKind, string> = { hit: 'Toggle hit', accent: 'Cycle
 interface RhythmGridProps {
   theme: RhythmTheme;
   slotLabels: readonly string[];
+  /** One "Chord" lane: the RiffBar chord of the bar plays, not a numbered slot. */
+  chordLane?: boolean;
   onAnnounce: (message: string) => void;
 }
 
@@ -146,7 +148,7 @@ const groupSummary = (pattern: RhythmPattern): string => {
  * toggles a hit in the lane, A cycles the accent, P toggles palm mute, Delete/Backspace clears. Clicks and
  * taps apply the selected tool.
  */
-export const RhythmGrid: React.FC<RhythmGridProps> = ({ theme, slotLabels, onAnnounce }) => {
+export const RhythmGrid: React.FC<RhythmGridProps> = ({ theme, slotLabels, chordLane = false, onAnnounce }) => {
   const pattern = useRhythmStore((s) => s.pattern);
   const lockedBars = useRhythmStore((s) => s.lockedBars);
   const toggleLockBar = useRhythmStore((s) => s.toggleLockBar);
@@ -159,7 +161,10 @@ export const RhythmGrid: React.FC<RhythmGridProps> = ({ theme, slotLabels, onAnn
     () => columns.map((c) => unitPosition(c.unit, pattern.meter, pattern.params.grid)),
     [columns, pattern.meter, pattern.params.grid]
   );
-  const lanes = useMemo(() => rhythmLanes(pattern.params.slotCount, slotLabels), [pattern.params.slotCount, slotLabels]);
+  const lanes = useMemo(
+    () => rhythmLanes(pattern.params.slotCount, slotLabels, chordLane),
+    [pattern.params.slotCount, slotLabels, chordLane]
+  );
   const groups = useMemo(() => buildGroups(pattern.params, pattern.seed), [pattern.params, pattern.seed]);
   const groupStarts = useMemo(() => new Map(groups.map((g) => [g.startUnit, g.length])), [groups]);
   const unitsPerBar = barUnits(pattern.meter, pattern.params.grid);
@@ -208,11 +213,11 @@ export const RhythmGrid: React.FC<RhythmGridProps> = ({ theme, slotLabels, onAnn
         onAnnounce(`${TOOL_NAMES[kind]}: nothing to change here. ${describeCell(position, lane, nextColumn)}`);
         return;
       }
-      const nextLanes = rhythmLanes(after.params.slotCount, slotLabels);
+      const nextLanes = rhythmLanes(after.params.slotCount, slotLabels, chordLane);
       const owner = nextLanes.find((x) => x.id === nextColumn.lane) ?? lane;
       onAnnounce(describeCell(position, owner, nextColumn));
     },
-    [onAnnounce, slotLabels]
+    [onAnnounce, slotLabels, chordLane]
   );
 
   const onFocusCell = useCallback((l: number, u: number) => {
@@ -411,7 +416,7 @@ export const RhythmGrid: React.FC<RhythmGridProps> = ({ theme, slotLabels, onAnn
                   aria-label={lane.spoken}
                   className="sticky left-0 z-20 w-[var(--label)] shrink-0 bg-neutral-950 px-2 flex items-center font-mono text-[10px] uppercase tracking-wider text-neutral-300"
                 >
-                  <span className="md:hidden">{lane.id === 'pedal' ? 'Ped' : lane.id === 'dead' ? 'Dead' : `S${Number(lane.id.slice(5)) + 1}`}</span>
+                  <span className="md:hidden">{lane.short}</span>
                   <span className="hidden md:inline truncate">{lane.label}</span>
                 </div>
                 {columns.map((column, u) => (

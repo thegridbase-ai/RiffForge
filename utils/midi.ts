@@ -1,6 +1,6 @@
 import { NOTES } from '../constants';
 import type { HarmonySlot, Meter, MidiNoteEvent, RhythmPattern, Tuning } from '../engine/types';
-import { rhythmToMidiNotes } from '../engine/rhythm/playback';
+import { rhythmToMidiNotes, type PlaybackOptions } from '../engine/rhythm/playback';
 import { patternLengthTicks } from '../engine/rhythm/grid';
 
 /**
@@ -166,8 +166,14 @@ export const encodeMidiNotes = (notes: MidiNoteEvent[], bpm: number, opts: Encod
 };
 
 /** A rhythm pattern voiced by its harmony slots as an SMF, with the pattern's meter and full loop length. */
-export const rhythmToMidi = (pattern: RhythmPattern, slots: HarmonySlot[], tuning: Tuning, bpm: number): Uint8Array =>
-  encodeMidiNotes(rhythmToMidiNotes(pattern, slots, tuning), bpm, {
+export const rhythmToMidi = (
+  pattern: RhythmPattern,
+  slots: HarmonySlot[],
+  tuning: Tuning,
+  bpm: number,
+  options: PlaybackOptions = {}
+): Uint8Array =>
+  encodeMidiNotes(rhythmToMidiNotes(pattern, slots, tuning, options), bpm, {
     meter: pattern.meter,
     lengthTicks: patternLengthTicks(pattern)
   });

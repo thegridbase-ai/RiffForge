@@ -1,6 +1,6 @@
 // Public API of the playability engine. Pure TypeScript, no runtime dependencies.
 // Vendored into Chord Explorer by its scripts/sync-engine.mjs; bump on any behaviour change.
-export const ENGINE_VERSION = '0.1.0';
+export const ENGINE_VERSION = '0.2.0';
 
 export * from './types';
 export * from './pitch';

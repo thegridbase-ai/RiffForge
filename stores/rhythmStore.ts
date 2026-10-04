@@ -8,6 +8,7 @@ import { clearHit, cycleAccent, setSlotCount, togglePalmMute, toggleHit } from '
 import { barTicks } from '../engine/rhythm/grid';
 import { getTuning } from '../engine/tuning';
 import { isValidShape } from '../engine/shape';
+import { handProfileHash } from '../engine/handProfile';
 import { clampBpm, useRiffStore } from './riffStore';
 import { useChordStore } from './chordStore';
 import { useHandProfileStore } from './handProfileStore';
@@ -16,7 +17,12 @@ import {
   MAX_RHYTHM_SLOTS,
   createRhythmSlot,
   defaultPedalMidi,
+  distinctChords,
+  optimizeProgressionShapes,
+  sameChordIds,
   optimizeSlotShapes,
+  progressionFromRiffSteps,
+  progressionOverrideKey,
   retuneSlot,
   sanitizeRhythmSlot,
   slotShapesKey,
@@ -54,6 +60,14 @@ export interface RhythmOptimization {
 
 export type OptimizeOutcome = { ok: true; text: string } | { ok: false; message: string };
 
+/** Where the lab's chords come from: the RiffBar (live, in order) or its own slots. */
+export type HarmonySource = 'riffbar' | 'slots';
+/** RiffBar chords change every bar, every half bar, or on the figure's accents (first four different chords). */
+export type ChordChange = 'bar' | 'halfBar' | 'accents';
+
+export const HARMONY_SOURCES: readonly HarmonySource[] = ['riffbar', 'slots'];
+export const CHORD_CHANGES: readonly ChordChange[] = ['bar', 'halfBar', 'accents'];
+
 interface PersistedRhythm {
   params: RhythmParams;
   seed: string;
@@ -62,13 +76,30 @@ interface PersistedRhythm {
   bpm: number;
   lockedBars: number[];
   metronomeOn: boolean;
+  harmonySource: HarmonySource;
+  chordChange: ChordChange;
+  /** Lab-only voicing per RiffBar step and tuning (progressionOverrideKey); the RiffBar is never changed. */
+  progressionOverrides: Record<string, (number | null)[]>;
 }
 
 export interface RhythmStore extends PersistedRhythm {
   isPlaying: boolean;
   /** Grid unit under the playhead, -1 when idle. */
   playheadUnit: number;
+  /** Progression index sounding under the playhead (RiffBar by bar), -1 when idle. */
+  playheadChord: number;
   optimization: RhythmOptimization | null;
+
+  setHarmonySource: (source: HarmonySource) => void;
+  setChordChange: (change: ChordChange) => void;
+  /** Re-checks how many harmony slots the figure needs (RiffBar, tuning or profile changed). */
+  syncHarmony: () => void;
+  /** Lab-only voicing for RiffBar steps in the current tuning; false when the shape does not fit. */
+  setProgressionShape: (stepKeys: string | readonly string[], shape: readonly (number | null)[]) => boolean;
+  resetProgressionShapes: () => void;
+  /** Optimizer for whatever the lab currently plays (RiffBar progression or own slots). */
+  optimizeHarmony: (profile: HandProfile, tuning: Tuning) => OptimizeOutcome;
+  setPlayheadChord: (index: number) => void;
 
   setStyle: (style: RhythmStyleId) => void;
   setParam: (patch: RhythmParamPatch) => void;
@@ -102,6 +133,57 @@ export interface RhythmStore extends PersistedRhythm {
 
 export const slotCountFor = (slots: readonly unknown[]): number => Math.min(MAX_RHYTHM_SLOTS, Math.max(1, slots.length));
 
+let progressionMemo: { key: string; chords: RhythmSlot[] } | null = null;
+
+/** The RiffBar as the lab's progression for the current tuning and hand profile (memoized). */
+export const currentProgression = (
+  overrides: PersistedRhythm['progressionOverrides'],
+  steps: ReturnType<typeof useRiffStore.getState>['steps'] = useRiffStore.getState().steps,
+  tuning: Tuning = getRhythmTuning(),
+  profile: HandProfile = getRhythmHandProfile()
+): RhythmSlot[] => {
+  const key = JSON.stringify([
+    steps.map((s) => [s.key, s.name, s.subtext, s.notes, s.shape ?? null, s.tuningId ?? null]),
+    tuning.id,
+    handProfileHash(profile),
+    overrides
+  ]);
+  if (progressionMemo?.key === key) return progressionMemo.chords;
+  const chords = progressionFromRiffSteps(steps, tuning, profile, overrides);
+  progressionMemo = { key, chords };
+  return chords;
+};
+
+/**
+ * Harmony slots the figure itself needs: own slots in slot mode; on accents, the RiffBar's first four different
+ * chords; when RiffBar chords change by bar or half bar, a single chord lane (the bar decides which chord sounds).
+ */
+export const harmonyCount = (
+  state: Pick<PersistedRhythm, 'harmonySource' | 'chordChange' | 'slots' | 'progressionOverrides'>,
+  progression?: readonly RhythmSlot[]
+): number => {
+  if (state.harmonySource === 'slots') return slotCountFor(state.slots);
+  if (state.chordChange !== 'accents') return 1;
+  return slotCountFor(distinctChords(progression ?? currentProgression(state.progressionOverrides)));
+};
+
+/** Overrides of steps still on the RiffBar (the others would pile up in storage forever). */
+const liveOverrides = (overrides: PersistedRhythm['progressionOverrides']): Record<string, (number | null)[]> => {
+  const keys = new Set(useRiffStore.getState().steps.map((s) => s.key));
+  return Object.fromEntries(Object.entries(overrides).filter(([key]) => keys.has(key.slice(0, key.lastIndexOf('|')))));
+};
+
+const sanitizeOverrides = (raw: unknown): PersistedRhythm['progressionOverrides'] => {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const out: Record<string, (number | null)[]> = {};
+  for (const [key, shape] of Object.entries(raw as Record<string, unknown>)) {
+    const tuning = getTuning(key.split('|').pop() ?? '');
+    if (tuning && Array.isArray(shape) && isValidShape(shape as (number | null)[], tuning.openMidi.length) && shape.some((f) => f !== null)) {
+      out[key] = [...(shape as (number | null)[])];
+    }
+  }
+  return out;
+};
 /** App code may use crypto for seeds; the engine itself stays seeded and deterministic. */
 export const randomSeed = (): string => {
   try {
@@ -219,7 +301,10 @@ export const createDefaultRhythmState = (): PersistedRhythm => {
     slots: [],
     bpm: defaultBpm(),
     lockedBars: [],
-    metronomeOn: false
+    metronomeOn: false,
+    harmonySource: 'riffbar',
+    chordChange: 'bar',
+    progressionOverrides: {}
   };
 };
 
@@ -237,8 +322,13 @@ const safePattern = (pattern: RhythmPattern): RhythmPattern | null => {
  * slots are dropped (shapes must fit their tuning), and a pattern that does not validate against its params is
  * regenerated from params + seed (keeping valid locks). Never throws.
  */
-export const parseRhythmState = (raw: string | null): PersistedRhythm => {
+export const parseRhythmState = (
+  raw: string | null,
+  countFor: (state: Pick<PersistedRhythm, 'harmonySource' | 'chordChange' | 'slots' | 'progressionOverrides'>) => number = (s) =>
+    harmonyCount(s)
+): PersistedRhythm => {
   const fallback = createDefaultRhythmState();
+  // The default follows the RiffBar chord by bar: one chord lane, which is what the fallback pattern has
   if (!raw) return fallback;
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -248,11 +338,20 @@ export const parseRhythmState = (raw: string | null): PersistedRhythm => {
       .map(sanitizeRhythmSlot)
       .filter((s): s is RhythmSlot => s !== null)
       .slice(0, MAX_RHYTHM_SLOTS);
+    // Older saves have no source: keep playing their own slots if they had any, else follow the RiffBar
+    const harmonySource: HarmonySource = HARMONY_SOURCES.includes(parsed.harmonySource as HarmonySource)
+      ? (parsed.harmonySource as HarmonySource)
+      : slots.length > 0
+        ? 'slots'
+        : 'riffbar';
+    const chordChange: ChordChange = CHORD_CHANGES.includes(parsed.chordChange as ChordChange) ? (parsed.chordChange as ChordChange) : 'bar';
+    const progressionOverrides = sanitizeOverrides(parsed.progressionOverrides);
+    const slotCount = countFor({ harmonySource, chordChange, slots, progressionOverrides });
     const rawParams = parsed.params as RhythmParams | undefined;
     const knownStyle = !!rawParams && typeof rawParams === 'object' && RHYTHM_STYLE_IDS.includes(rawParams.style);
     const params: RhythmParams = knownStyle
-      ? { ...sanitizeRhythmParams(rawParams as RhythmParams), slotCount: slotCountFor(slots) }
-      : paramsFor(DEFAULT_RHYTHM_STYLE, slots);
+      ? { ...sanitizeRhythmParams(rawParams as RhythmParams), slotCount }
+      : { ...paramsFor(DEFAULT_RHYTHM_STYLE, slots), slotCount };
     const seed = typeof parsed.seed === 'string' && parsed.seed.length > 0 ? parsed.seed : DEFAULT_RHYTHM_SEED;
     const bars = params.bars;
     const lockedBars = sanitizeLocks(Array.isArray(parsed.lockedBars) ? parsed.lockedBars : [], bars);
@@ -282,7 +381,10 @@ export const parseRhythmState = (raw: string | null): PersistedRhythm => {
       slots,
       bpm: typeof parsed.bpm === 'number' ? clampBpm(parsed.bpm) : fallback.bpm,
       lockedBars: locks,
-      metronomeOn: parsed.metronomeOn === true
+      metronomeOn: parsed.metronomeOn === true,
+      harmonySource,
+      chordChange,
+      progressionOverrides
     };
   } catch {
     return fallback;
@@ -301,14 +403,28 @@ const loadRhythm = (): PersistedRhythm => {
 const saveRhythm = (state: PersistedRhythm): void => {
   try {
     if (typeof localStorage === 'undefined') return;
-    const { params, seed, pattern, slots, bpm, lockedBars, metronomeOn } = state;
-    localStorage.setItem(RHYTHM_STORAGE_KEY, JSON.stringify({ params, seed, pattern, slots, bpm, lockedBars, metronomeOn }));
+    const { params, seed, pattern, slots, bpm, lockedBars, metronomeOn, harmonySource, chordChange, progressionOverrides } = state;
+    localStorage.setItem(
+      RHYTHM_STORAGE_KEY,
+      JSON.stringify({ params, seed, pattern, slots, bpm, lockedBars, metronomeOn, harmonySource, chordChange, progressionOverrides })
+    );
   } catch {
     // Storage unavailable (private mode, quota): the lab keeps working in memory
   }
 };
 
-const PERSISTED_KEYS: readonly (keyof PersistedRhythm)[] = ['params', 'seed', 'pattern', 'slots', 'bpm', 'lockedBars', 'metronomeOn'];
+const PERSISTED_KEYS: readonly (keyof PersistedRhythm)[] = [
+  'params',
+  'seed',
+  'pattern',
+  'slots',
+  'bpm',
+  'lockedBars',
+  'metronomeOn',
+  'harmonySource',
+  'chordChange',
+  'progressionOverrides'
+];
 
 const clamp01 = (x: unknown, fallback: number): number =>
   typeof x === 'number' && Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : fallback;
@@ -322,21 +438,25 @@ let mutationRound = 0;
 
 export const useRhythmStore = create<RhythmStore>((set, get) => {
   /**
-   * New slots: keeps params.slotCount in sync when the count changes. An untouched pattern is regenerated (same
-   * seed, locks kept) so every slot gets its chord changes; edited or mutated events are kept, with slot targets
-   * folded into range.
+   * Applies `patch` and keeps params.slotCount equal to the harmony the figure needs. An untouched pattern is
+   * regenerated (same seed, locks kept) so every slot gets its chord changes; edited or mutated events are kept,
+   * with slot targets folded into range.
    */
-  const withSlots = (slots: RhythmSlot[]): Partial<RhythmStore> => {
+  const withHarmony = (patch: Partial<PersistedRhythm>): Partial<RhythmStore> => {
     const state = get();
-    const count = slotCountFor(slots);
-    if (count === state.params.slotCount) return { slots, optimization: null };
+    const count = harmonyCount({ ...state, ...patch });
+    if (count === state.params.slotCount) return { ...patch, optimization: null };
     const params = { ...state.params, slotCount: count };
     if (hasUnlockedChanges(state.pattern, state.params, state.seed, state.lockedBars)) {
-      return { slots, params, pattern: setSlotCount(state.pattern, count), optimization: null };
+      return { ...patch, params, pattern: setSlotCount(state.pattern, count), optimization: null };
     }
     const { pattern, lockedBars } = regenerateKeepingLocks(state.pattern, params, state.seed, state.lockedBars);
-    return { slots, params, pattern, lockedBars, optimization: null };
+    return { ...patch, params, pattern, lockedBars, optimization: null };
   };
+
+  /** Own slots changed; adding one also makes the lab play its own slots. */
+  const withSlots = (slots: RhythmSlot[], source?: HarmonySource): Partial<RhythmStore> =>
+    withHarmony(source ? { slots, harmonySource: source } : { slots });
 
   const regenerate = (params: RhythmParams, seed: string): Partial<RhythmStore> => {
     const state = get();
@@ -348,11 +468,74 @@ export const useRhythmStore = create<RhythmStore>((set, get) => {
     ...initial,
     isPlaying: false,
     playheadUnit: -1,
+    playheadChord: -1,
     optimization: null,
 
     setStyle: (style) => {
       if (!RHYTHM_STYLE_IDS.includes(style)) return;
-      set(regenerate(paramsFor(style, get().slots), get().seed));
+      set(regenerate({ ...defaultRhythmParams(style), slotCount: harmonyCount(get()) }, get().seed));
+    },
+
+    setHarmonySource: (source) => {
+      if (!HARMONY_SOURCES.includes(source) || source === get().harmonySource) return;
+      set(withHarmony({ harmonySource: source }));
+    },
+
+    setChordChange: (change) => {
+      if (!CHORD_CHANGES.includes(change) || change === get().chordChange) return;
+      set(withHarmony({ chordChange: change }));
+    },
+
+    syncHarmony: () => {
+      const state = get();
+      if (harmonyCount(state) !== state.params.slotCount) set(withHarmony({}));
+    },
+
+    setProgressionShape: (stepKeys, shape) => {
+      const tuning = getRhythmTuning();
+      if (!isValidShape(shape, tuning.openMidi.length) || !shape.some((f) => f !== null)) return false;
+      const progressionOverrides = liveOverrides(get().progressionOverrides);
+      for (const key of typeof stepKeys === 'string' ? [stepKeys] : stepKeys) {
+        progressionOverrides[progressionOverrideKey(key, tuning.id)] = [...shape];
+      }
+      set(withHarmony({ progressionOverrides }));
+      return true;
+    },
+
+    resetProgressionShapes: () => set(withHarmony({ progressionOverrides: {} })),
+
+    optimizeHarmony: (profile, tuning) => {
+      const state = get();
+      if (state.harmonySource === 'slots') return get().optimizeSlots(profile, tuning);
+      const chords = currentProgression(state.progressionOverrides, useRiffStore.getState().steps, tuning, profile);
+      const harmony = state.chordChange === 'accents' ? distinctChords(chords) : chords;
+      if (harmony.length < 2) return { ok: false, message: 'Add at least two different chords to the RiffBar first.' };
+      try {
+        const out =
+          state.chordChange === 'accents'
+            ? optimizeSlotShapes(harmony, state.pattern, tuning, profile, state.bpm)
+            : optimizeProgressionShapes(harmony, state.pattern, state.chordChange, tuning, profile, state.bpm);
+        const progressionOverrides = liveOverrides(state.progressionOverrides);
+        harmony.forEach((chord, i) => {
+          // On accents a slot stands for every step that is the same chord, so they all move together
+          const ids = state.chordChange === 'accents' ? sameChordIds(chords, chord) : [chord.id];
+          for (const id of ids) progressionOverrides[progressionOverrideKey(id, tuning.id)] = [...out.shapes[i]];
+        });
+        const next = currentProgression(progressionOverrides, useRiffStore.getState().steps, tuning, profile);
+        const shown = state.chordChange === 'accents' ? distinctChords(next) : next;
+        set({
+          ...withHarmony({ progressionOverrides }),
+          optimization: {
+            text: out.text,
+            maxCost: out.result.maxCost,
+            fingers: out.fingerings.map((f) => [...f.fingers]),
+            shapesKey: slotShapesKey(shown)
+          }
+        });
+        return { ok: true, text: out.text };
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'Could not optimize these chords.' };
+      }
     },
 
     setParam: (patch) => {
@@ -398,7 +581,7 @@ export const useRhythmStore = create<RhythmStore>((set, get) => {
       if (slots.length >= MAX_RHYTHM_SLOTS) return false;
       const slot = createRhythmSlot(input);
       if (!slot || slots.some((s) => s.id === slot.id)) return false;
-      set(withSlots([...slots, slot]));
+      set(withSlots([...slots, slot], 'slots'));
       return true;
     },
 
@@ -424,7 +607,7 @@ export const useRhythmStore = create<RhythmStore>((set, get) => {
     useRiffBarChords: (tuning = getRhythmTuning(), profile = getRhythmHandProfile()) => {
       const slots = slotsFromRiffSteps(useRiffStore.getState().steps, tuning, profile);
       if (slots.length === 0) return 0;
-      set(withSlots(slots));
+      set(withSlots(slots, 'slots'));
       return slots.length;
     },
 
@@ -461,8 +644,9 @@ export const useRhythmStore = create<RhythmStore>((set, get) => {
       }
     },
 
-    setIsPlaying: (value) => set(value ? { isPlaying: true } : { isPlaying: false, playheadUnit: -1 }),
-    setPlayheadUnit: (unit) => set({ playheadUnit: unit })
+    setIsPlaying: (value) => set(value ? { isPlaying: true } : { isPlaying: false, playheadUnit: -1, playheadChord: -1 }),
+    setPlayheadUnit: (unit) => set({ playheadUnit: unit }),
+    setPlayheadChord: (index) => set({ playheadChord: index })
   };
 });
 

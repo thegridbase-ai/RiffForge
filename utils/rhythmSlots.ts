@@ -23,9 +23,15 @@ import { noveltyScore, scoreVoicing } from '../engine/playability';
 import { bassMidi, isValidShape, shapeKey, shapeToMidi } from '../engine/shape';
 import { intervalFrom, parseNoteName, parsePitchClass, pitchClass } from '../engine/pitch';
 import { getTuning } from '../engine/tuning';
-import { PROFILE_LIMITS } from '../engine/handProfile';
+import { PROFILE_LIMITS, handProfileHash } from '../engine/handProfile';
 import { describeTransition, optimizeSequence, type OptimizedSequence } from '../engine/transition';
 import { PPQ, barTicks, barUnits, gridUnitTicks, patternLengthTicks } from '../engine/rhythm/grid';
+import {
+  MAX_PROGRESSION_CHORDS,
+  arrangeProgression,
+  progressionChangeBeats,
+  type ProgressionChange
+} from '../engine/rhythm/progression';
 import { parseRoot } from './chordExplorer';
 
 // ---------------------------------------------------------------------------
@@ -374,6 +380,117 @@ export const slotShapesKey = (slots: readonly Pick<RhythmSlot, 'shape' | 'tuning
   slots.map((s) => `${s.tuningId}:${shapeKey(s.shape)}`).join('|');
 
 // ---------------------------------------------------------------------------
+// RiffBar progression
+// ---------------------------------------------------------------------------
+
+/** A RiffBar step as the lab sees it: its notes, and the exact shape it was added with when known. */
+export interface RiffStepInput extends RiffStepLike {
+  key: string;
+  shape?: readonly (number | null)[];
+  tuningId?: string;
+}
+
+/** Lab-only voicing choices (Alt, optimizer) per RiffBar step and tuning; the RiffBar itself is never changed. */
+export type ProgressionOverrides = Readonly<Record<string, readonly (number | null)[]>>;
+
+export const progressionOverrideKey = (stepKey: string, tuningId: string): string => `${stepKey}|${tuningId}`;
+
+const derivedShapes = new Map<string, Shape | null>();
+
+/** Voicing for a step without a usable stored shape: the one that sounds its notes, else the cheapest. */
+const derivedShape = (family: VoicingFamily, baseRoot: string, tuning: Tuning, profile: HandProfile, midi: readonly number[]): Shape | null => {
+  const key = `${family.id}|${baseRoot}|${tuning.id}|${handProfileHash(profile)}|${sortedMidi(midi)}`;
+  if (!derivedShapes.has(key)) {
+    const pick =
+      exactMatch(family, baseRoot, tuning, profile, midi) ??
+      cheapest(generate(family, baseRoot, tuning, profile, DEFAULT_SLOT_CANDIDATES, true));
+    derivedShapes.set(key, pick ? [...pick.shape] : null);
+  }
+  return derivedShapes.get(key) ?? null;
+};
+
+/** The chord one RiffBar step plays in the lab, or null when it has no playable voicing. */
+const progressionChord = (
+  step: RiffStepInput,
+  tuning: Tuning,
+  profile: HandProfile,
+  overrides: ProgressionOverrides
+): RhythmSlot | null => {
+  const notes = step.notes.filter((n) => parseNoteName(n) !== null);
+  if (notes.length === 0) return null;
+  const baseRoot = parseRoot(step.name, step.subtext);
+  const source: RhythmSlotSource = { kind: 'notes', notes: [...notes], baseRoot };
+  const midi = notes.map((n) => parseNoteName(n) as number);
+  const override = overrides[progressionOverrideKey(step.key, tuning.id)];
+  let shape: Shape | null = null;
+  if (override && fitsTuning(override, tuning)) {
+    shape = [...override];
+  } else if (
+    step.shape &&
+    step.tuningId === tuning.id &&
+    fitsTuning(step.shape, tuning) &&
+    sortedMidi(shapeToMidi(step.shape, tuning)) === sortedMidi(midi)
+  ) {
+    shape = [...step.shape];
+  } else {
+    const family = slotFamily({ source });
+    shape = family ? derivedShape(family, baseRoot, tuning, profile, midi) : null;
+  }
+  if (!shape) return null;
+  return {
+    id: step.key,
+    label: step.name,
+    root: baseRoot,
+    source,
+    shape: [...shape],
+    tuningId: tuning.id,
+    pedalMidi: defaultPedalMidi(shape, tuning, baseRoot)
+  };
+};
+
+/**
+ * The RiffBar as a chord progression for the lab: one chord per step, in order, repeats kept (up to 16).
+ * Each chord plays, in this order of preference: the lab's own voicing choice for the step, the exact shape the
+ * step was added with (same tuning and same sounding notes), or the voicing that sounds the step's notes (else
+ * the cheapest of its recipe). Steps with no playable voicing are skipped. Chord ids are the step keys.
+ */
+export const progressionFromRiffSteps = (
+  steps: readonly RiffStepInput[],
+  tuning: Tuning,
+  profile: HandProfile,
+  overrides: ProgressionOverrides = {}
+): RhythmSlot[] =>
+  steps
+    .flatMap((step) => {
+      const chord = progressionChord(step, tuning, profile, overrides);
+      return chord ? [chord] : [];
+    })
+    .slice(0, MAX_PROGRESSION_CHORDS);
+
+/** Name and shape: two RiffBar steps with the same identity are the same chord when chords change on accents. */
+export const chordIdentity = (chord: Pick<RhythmSlot, 'label' | 'shape'>): string => `${chord.label}|${shapeKey(chord.shape)}`;
+
+/** Ids of every chord in the progression that is the same chord as `chord` (itself included). */
+export const sameChordIds = (chords: readonly RhythmSlot[], chord: Pick<RhythmSlot, 'label' | 'shape'>): string[] => {
+  const identity = chordIdentity(chord);
+  return chords.filter((c) => chordIdentity(c) === identity).map((c) => c.id);
+};
+
+/** First `max` different chords (by name and shape), in order: the harmony used when chords change on accents. */
+export const distinctChords = (chords: readonly RhythmSlot[], max: number = MAX_RHYTHM_SLOTS): RhythmSlot[] => {
+  const seen = new Set<string>();
+  const out: RhythmSlot[] = [];
+  for (const chord of chords) {
+    if (out.length >= max) break;
+    const key = chordIdentity(chord);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(chord);
+  }
+  return out;
+};
+
+// ---------------------------------------------------------------------------
 // Change timing and the fingering optimizer
 // ---------------------------------------------------------------------------
 
@@ -422,30 +539,49 @@ export interface SlotShapeOptimization {
  * this tempo (minimax Viterbi over slotCandidates, timed by changeBeats), with the user's hand profile so the
  * fingerings are chosen with their neighbours. Throws when a slot has no playable voicing at all.
  */
+const optimizeShapes = (
+  slots: readonly RhythmSlot[],
+  beatsPerSlot: readonly number[],
+  tuning: Tuning,
+  profile: HandProfile,
+  bpm: number,
+  noun: string
+): SlotShapeOptimization => {
+  const candidates = slots.map((slot, i) => {
+    const list = slotCandidates(slot, tuning, profile);
+    if (list.length === 0) throw new Error(`${noun} ${i + 1} (${slot.label}) has no playable voicing for your hand profile.`);
+    return list;
+  });
+  const result = optimizeSequence(candidates, { bpm, beatsPerSlot, cyclic: true }, { profile });
+  const shapes = result.path.map((index, slot) => [...candidates[slot][index].shape]);
+  const text =
+    slots.length < 2
+      ? describeTransition(null)
+      : `${describeTransition(result.hardest).replace(/\bslot\b/g, noun.toLowerCase())} (cost ${(Math.round(result.maxCost * 10) / 10).toFixed(1)})`;
+  return { shapes, fingerings: result.fingerings, result, text };
+};
+
 export const optimizeSlotShapes = (
   slots: readonly RhythmSlot[],
   pattern: RhythmPattern,
   tuning: Tuning,
   profile: HandProfile,
   bpm: number
-): SlotShapeOptimization => {
-  const candidates = slots.map((slot, i) => {
-    const list = slotCandidates(slot, tuning, profile);
-    if (list.length === 0) throw new Error(`Slot ${i + 1} (${slot.label}) has no playable voicing for your hand profile.`);
-    return list;
-  });
-  const result = optimizeSequence(
-    candidates,
-    { bpm, beatsPerSlot: changeBeats(pattern, slots.length), cyclic: true },
-    { profile }
-  );
-  const shapes = result.path.map((index, slot) => [...candidates[slot][index].shape]);
-  const text =
-    slots.length < 2
-      ? describeTransition(null)
-      : `${describeTransition(result.hardest)} (cost ${(Math.round(result.maxCost * 10) / 10).toFixed(1)})`;
-  return { shapes, fingerings: result.fingerings, result, text };
-};
+): SlotShapeOptimization => optimizeShapes(slots, changeBeats(pattern, slots.length), tuning, profile, bpm, 'Slot');
+
+/**
+ * The same optimizer over a RiffBar progression: one voicing per chord so the hardest change of the arranged
+ * loop (figure repeated over the progression, chords changing every bar or half bar) is as easy as possible.
+ */
+export const optimizeProgressionShapes = (
+  chords: readonly RhythmSlot[],
+  pattern: RhythmPattern,
+  change: ProgressionChange,
+  tuning: Tuning,
+  profile: HandProfile,
+  bpm: number
+): SlotShapeOptimization =>
+  optimizeShapes(chords, progressionChangeBeats(arrangeProgression(pattern, chords.length, change)), tuning, profile, bpm, 'Chord');
 
 // ---------------------------------------------------------------------------
 // Transport timing
@@ -517,6 +653,8 @@ export type LaneId = string;
 export interface RhythmLane {
   id: LaneId;
   label: string;
+  /** Narrow-screen label ("Ped", "S2", "Ch"). */
+  short: string;
   /** Spoken name ("pedal", "slot 2", "dead note"). */
   spoken: string;
   /** Target a fresh hit in this lane gets. */
@@ -526,16 +664,22 @@ export interface RhythmLane {
 export const laneIdOf = (target: HitTarget): LaneId =>
   target.kind === 'slot' || target.kind === 'dyad' ? `slot-${target.slot}` : target.kind;
 
-/** Pedal, Slot 1..N, Dead (top to bottom). */
-export const rhythmLanes = (slotCount: number, slotLabels: readonly string[] = []): RhythmLane[] => [
-  { id: 'pedal', label: 'Pedal', spoken: 'pedal', target: { kind: 'pedal' } },
-  ...Array.from({ length: Math.max(1, slotCount) }, (_, i): RhythmLane => ({
-    id: `slot-${i}`,
-    label: slotLabels[i] ? `${i + 1} ${slotLabels[i]}` : `Slot ${i + 1}`,
-    spoken: slotLabels[i] ? `slot ${i + 1}, ${slotLabels[i]}` : `slot ${i + 1}`,
-    target: { kind: 'slot', slot: i }
-  })),
-  { id: 'dead', label: 'Dead', spoken: 'dead note', target: { kind: 'dead' } }
+/**
+ * Pedal, Slot 1..N, Dead (top to bottom). With `chordLane` (a RiffBar progression changing by bar) there is a
+ * single Chord lane: which chord sounds is decided by the bar, not by the lane.
+ */
+export const rhythmLanes = (slotCount: number, slotLabels: readonly string[] = [], chordLane = false): RhythmLane[] => [
+  { id: 'pedal', label: 'Pedal', short: 'Ped', spoken: 'pedal', target: { kind: 'pedal' } },
+  ...(chordLane
+    ? [{ id: 'slot-0', label: 'Chord', short: 'Ch', spoken: 'chord', target: { kind: 'slot', slot: 0 } } as RhythmLane]
+    : Array.from({ length: Math.max(1, slotCount) }, (_, i): RhythmLane => ({
+        id: `slot-${i}`,
+        label: slotLabels[i] ? `${i + 1} ${slotLabels[i]}` : `Slot ${i + 1}`,
+        short: `S${i + 1}`,
+        spoken: slotLabels[i] ? `slot ${i + 1}, ${slotLabels[i]}` : `slot ${i + 1}`,
+        target: { kind: 'slot', slot: i }
+      }))),
+  { id: 'dead', label: 'Dead', short: 'Dead', spoken: 'dead note', target: { kind: 'dead' } }
 ];
 
 export interface GridColumn {

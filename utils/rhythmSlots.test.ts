@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   changeBeats,
   clickTimes,
+  distinctChords,
+  optimizeProgressionShapes,
+  progressionFromRiffSteps,
+  progressionOverrideKey,
   createRhythmSlot,
   defaultPedalMidi,
   describeCell,
@@ -373,5 +377,109 @@ describe('grid labels', () => {
     expect(toggleTargetFor(lanes[1], columns[0])).toEqual({ kind: 'dyad', slot: 0 });
     expect(toggleTargetFor(lanes[2], columns[0])).toEqual({ kind: 'slot', slot: 1 });
     expect(toggleTargetFor(lanes[0], columns[4])).toEqual({ kind: 'pedal' });
+  });
+});
+
+describe('progressionFromRiffSteps', () => {
+  const step = (key: string, name: string, notes: string[], shape?: (number | null)[], tuningId = E_STANDARD.id) => ({
+    key,
+    name,
+    subtext: '',
+    notes,
+    shape,
+    tuningId: shape ? tuningId : undefined
+  });
+
+  it('keeps every step in order, repeats included, on the exact shape it was added with', () => {
+    const chords = progressionFromRiffSteps(
+      [
+        step('a', 'E5', ['E2', 'B2', 'E3'], [0, 2, 2, null, null, null]),
+        step('b', 'G5', ['G2', 'D3', 'G3'], [3, 5, 5, null, null, null]),
+        step('c', 'E5', ['E2', 'B2', 'E3'], [0, 2, 2, null, null, null])
+      ],
+      E_STANDARD,
+      profile
+    );
+    expect(chords.map((c) => c.id)).toEqual(['a', 'b', 'c']);
+    expect(chords.map((c) => c.shape)).toEqual([
+      [0, 2, 2, null, null, null],
+      [3, 5, 5, null, null, null],
+      [0, 2, 2, null, null, null]
+    ]);
+    expect(chords.map((c) => c.root)).toEqual(['E', 'G', 'E']);
+    expect(chords[0].pedalMidi).toBe(40);
+  });
+
+  it('re-voices a step whose shape belongs to another tuning to the same notes', () => {
+    const [chord] = progressionFromRiffSteps([step('a', 'E5', ['E2', 'B2', 'E3'], [0, 2, 2, null, null, null])], DROP_D, profile);
+    expect(shapeToMidi(chord.shape, DROP_D).sort((x, y) => x - y)).toEqual([40, 47, 52]);
+    expect(chord.tuningId).toBe(DROP_D.id);
+  });
+
+  it('derives a voicing for older steps without a shape, and ignores a shape that does not sound the notes', () => {
+    const chords = progressionFromRiffSteps(
+      [step('a', 'Em', ['E2', 'B2', 'E3', 'G3']), step('b', 'G5', ['G2', 'D3', 'G3'], [0, 2, 2, null, null, null])],
+      E_STANDARD,
+      profile
+    );
+    expect(shapeToMidi(chords[0].shape, E_STANDARD).sort((x, y) => x - y)).toEqual([40, 47, 52, 55]);
+    expect(shapeToMidi(chords[1].shape, E_STANDARD).sort((x, y) => x - y)).toEqual([43, 50, 55]);
+  });
+
+  it('lets a lab-only voicing win for its step and tuning', () => {
+    const overrides = { [progressionOverrideKey('a', E_STANDARD.id)]: [12, 14, 14, null, null, null] };
+    const [chord] = progressionFromRiffSteps([step('a', 'E5', ['E2', 'B2', 'E3'], [0, 2, 2, null, null, null])], E_STANDARD, profile, overrides);
+    expect(chord.shape).toEqual([12, 14, 14, null, null, null]);
+    const [drop] = progressionFromRiffSteps([step('a', 'E5', ['E2', 'B2', 'E3'], [0, 2, 2, null, null, null])], DROP_D, profile, overrides);
+    expect(drop.shape).not.toEqual([12, 14, 14, null, null, null]);
+  });
+
+  it('skips steps without readable notes and caps the progression at 16 chords', () => {
+    const many = Array.from({ length: 20 }, (_, i) => step(`s${i}`, 'E5', ['E2', 'B2', 'E3'], [0, 2, 2, null, null, null]));
+    expect(progressionFromRiffSteps([step('x', '??', ['nope']), ...many], E_STANDARD, profile)).toHaveLength(16);
+  });
+});
+
+describe('distinctChords', () => {
+  it('keeps the first of each chord in order, up to four', () => {
+    const chord = (id: string, label: string, shape: (number | null)[]) => familySlot('E', 'power5', shape, id) && { ...familySlot('E', 'power5', shape, id), label };
+    const list = [
+      chord('a', 'E5', [0, 2, 2, null, null, null]),
+      chord('b', 'G5', [3, 5, 5, null, null, null]),
+      chord('c', 'E5', [0, 2, 2, null, null, null]),
+      chord('d', 'A5', [5, 7, 7, null, null, null]),
+      chord('e', 'C5', [8, 10, 10, null, null, null]),
+      chord('f', 'D5', [10, 12, 12, null, null, null])
+    ];
+    expect(distinctChords(list).map((c) => c.id)).toEqual(['a', 'b', 'd', 'e']);
+  });
+});
+
+describe('optimizeProgressionShapes', () => {
+  it('returns one voicing per chord and names the hardest chord change', () => {
+    const chords = progressionFromRiffSteps(
+      [
+        { key: 'a', name: 'E5', subtext: '', notes: ['E2', 'B2', 'E3'] },
+        { key: 'b', name: 'G5', subtext: '', notes: ['G2', 'D3', 'G3'] },
+        { key: 'c', name: 'A5', subtext: '', notes: ['A2', 'E3', 'A3'] }
+      ],
+      E_STANDARD,
+      profile
+    );
+    const pattern = generateRhythm({ ...defaultRhythmParams('gallop'), slotCount: 1 }, 'prog');
+    const out = optimizeProgressionShapes(chords, pattern, 'bar', E_STANDARD, profile, 140);
+    expect(out.shapes).toHaveLength(3);
+    expect(out.fingerings).toHaveLength(3);
+    expect(out.text).toMatch(/^Hardest change: chord \d -> \d/);
+  });
+});
+
+describe('chord lane', () => {
+  it('has a single Chord lane when a progression decides the chord by bar', () => {
+    expect(rhythmLanes(1, ['E5'], true).map((l) => [l.id, l.label, l.short])).toEqual([
+      ['pedal', 'Pedal', 'Ped'],
+      ['slot-0', 'Chord', 'Ch'],
+      ['dead', 'Dead', 'Dead']
+    ]);
   });
 });

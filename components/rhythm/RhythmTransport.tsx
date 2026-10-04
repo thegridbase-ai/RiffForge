@@ -9,14 +9,12 @@ interface RhythmTransportProps {
   isPlaying: boolean;
   metronomeOn: boolean;
   bpm: number;
-  riffStepCount: number;
   onPlayToggle: () => void;
   onMetronomeToggle: () => void;
   onBpmChange: (bpm: number) => void;
   onNewIdea: () => void;
   onMutate: () => void;
   onExportMidi: () => void;
-  onUseRiffChords: () => void;
 }
 
 const roundButton = (theme: RhythmTheme, active: boolean): string => `
@@ -36,14 +34,12 @@ export const RhythmTransport: React.FC<RhythmTransportProps> = ({
   isPlaying,
   metronomeOn,
   bpm,
-  riffStepCount,
   onPlayToggle,
   onMetronomeToggle,
   onBpmChange,
   onNewIdea,
   onMutate,
-  onExportMidi,
-  onUseRiffChords
+  onExportMidi
 }) => (
   <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
     <div className="flex items-center gap-2">
@@ -112,16 +108,6 @@ export const RhythmTransport: React.FC<RhythmTransportProps> = ({
       <button type="button" onClick={onExportMidi} aria-label="Export rhythm as MIDI" className={pillClass(theme)}>
         <Icon path={<><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M4 19h16" /></>} />
         MIDI
-      </button>
-      <button
-        type="button"
-        onClick={onUseRiffChords}
-        disabled={riffStepCount === 0}
-        title={riffStepCount === 0 ? 'Add chords to the RiffBar first' : 'Use the first four distinct RiffBar chords as slots'}
-        className={pillClass(theme)}
-      >
-        <Icon path={<><rect x="3" y="7" width="18" height="10" rx="2" /><path d="M7 7v10M12 7v10M17 7v10" /></>} />
-        Use RiffBar chords as slots
       </button>
     </div>
   </div>

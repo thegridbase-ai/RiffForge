@@ -433,3 +433,127 @@ describe('scheduleRhythmRestart', () => {
     }
   });
 });
+
+describe('rhythmStore harmony from the RiffBar', () => {
+  const step = (name: string, notes: string[], shape?: (number | null)[]) => ({
+    id: name,
+    name,
+    subtext: '',
+    notes,
+    shape,
+    tuningId: shape ? E_STANDARD.id : undefined
+  });
+  const E5_STEP = step('E5', ['E2', 'B2', 'E3'], [0, 2, 2, null, null, null]);
+  const G5_STEP = step('G5', ['G2', 'D3', 'G3'], [3, 5, 5, null, null, null]);
+  const A5_STEP = step('A5', ['A2', 'E3', 'A3'], [5, 7, 7, null, null, null]);
+
+  it('follows the RiffBar chord by bar by default, with one chord lane', async () => {
+    const useRhythmStore = await freshStore();
+    const state = useRhythmStore.getState();
+    expect(state.harmonySource).toBe('riffbar');
+    expect(state.chordChange).toBe('bar');
+    expect(state.params.slotCount).toBe(1);
+    expect(state.pattern.params.slotCount).toBe(1);
+  });
+
+  it('keeps an older save that had its own slots on those slots', async () => {
+    const first = await freshStore();
+    first.getState().addSlot(E5);
+    first.getState().addSlot(G5);
+    const saved = JSON.parse(localStorage.getItem(RHYTHM_STORAGE_KEY)!);
+    delete saved.harmonySource;
+    delete saved.chordChange;
+    delete saved.progressionOverrides;
+    localStorage.setItem(RHYTHM_STORAGE_KEY, JSON.stringify(saved));
+    const useRhythmStore = await freshStore();
+    expect(useRhythmStore.getState().harmonySource).toBe('slots');
+    expect(useRhythmStore.getState().params.slotCount).toBe(2);
+  });
+
+  it('on accents uses the first four different RiffBar chords, in order', async () => {
+    const { useRhythmStore, useRiffStore } = await freshStores();
+    for (const s of [E5_STEP, G5_STEP, E5_STEP, A5_STEP]) useRiffStore.getState().addStep(s);
+    useRhythmStore.getState().setChordChange('accents');
+    expect(useRhythmStore.getState().params.slotCount).toBe(3);
+    useRhythmStore.getState().setChordChange('halfBar');
+    expect(useRhythmStore.getState().params.slotCount).toBe(1);
+  });
+
+  it('re-syncs the slot count when the RiffBar changes on accents', async () => {
+    const { useRhythmStore, useRiffStore } = await freshStores();
+    useRhythmStore.getState().setChordChange('accents');
+    expect(useRhythmStore.getState().params.slotCount).toBe(1);
+    useRiffStore.getState().addStep(E5_STEP);
+    useRiffStore.getState().addStep(G5_STEP);
+    useRhythmStore.getState().syncHarmony();
+    expect(useRhythmStore.getState().params.slotCount).toBe(2);
+  });
+
+  it('switches to its own slots when one is sent from the Voicing Finder, and back', async () => {
+    const useRhythmStore = await freshStore();
+    useRhythmStore.getState().addSlot(E5);
+    useRhythmStore.getState().addSlot(G5);
+    expect(useRhythmStore.getState().harmonySource).toBe('slots');
+    expect(useRhythmStore.getState().params.slotCount).toBe(2);
+    useRhythmStore.getState().setHarmonySource('riffbar');
+    expect(useRhythmStore.getState().params.slotCount).toBe(1);
+    expect(useRhythmStore.getState().slots).toHaveLength(2);
+  });
+
+  it('keeps lab-only voicings per RiffBar step and tuning without touching the RiffBar', async () => {
+    const { useRhythmStore, useRiffStore } = await freshStores();
+    useRiffStore.getState().addStep(E5_STEP);
+    const key = useRiffStore.getState().steps[0].key;
+    expect(useRhythmStore.getState().setProgressionShape(key, [12, 14, 14, null, null, null])).toBe(true);
+    expect(useRhythmStore.getState().setProgressionShape(key, [0, 2])).toBe(false);
+    expect(useRhythmStore.getState().progressionOverrides).toEqual({ [`${key}|e-standard`]: [12, 14, 14, null, null, null] });
+    expect(useRiffStore.getState().steps[0].shape).toEqual([0, 2, 2, null, null, null]);
+
+    const reloaded = await import('./rhythmStore');
+    expect(reloaded.currentProgression(useRhythmStore.getState().progressionOverrides)[0].shape).toEqual([12, 14, 14, null, null, null]);
+    useRhythmStore.getState().resetProgressionShapes();
+    expect(useRhythmStore.getState().progressionOverrides).toEqual({});
+  });
+
+  it('optimizes the RiffBar progression and reports the hardest chord change', async () => {
+    const { useRhythmStore, useRiffStore } = await freshStores();
+    for (const s of [E5_STEP, G5_STEP, A5_STEP]) useRiffStore.getState().addStep(s);
+    const out = useRhythmStore.getState().optimizeHarmony(DEFAULT_HAND_PROFILE, E_STANDARD);
+    expect(out.ok).toBe(true);
+    if (out.ok === true) expect(out.text).toMatch(/chord \d -> \d/);
+    expect(Object.keys(useRhythmStore.getState().progressionOverrides)).toHaveLength(3);
+    expect(useRhythmStore.getState().optimization?.fingers).toHaveLength(3);
+  });
+
+  it('on accents moves repeated RiffBar chords together, so the slots stay the same', async () => {
+    const { useRhythmStore, useRiffStore } = await freshStores();
+    for (const s of [E5_STEP, G5_STEP, E5_STEP, A5_STEP]) useRiffStore.getState().addStep(s);
+    useRhythmStore.getState().setChordChange('accents');
+    const [first, , third] = useRiffStore.getState().steps.map((s) => s.key);
+    useRhythmStore.getState().setProgressionShape([first, third], [12, 14, 14, null, null, null]);
+    const out = useRhythmStore.getState().optimizeHarmony(DEFAULT_HAND_PROFILE, E_STANDARD);
+    expect(out.ok).toBe(true);
+    const overrides = useRhythmStore.getState().progressionOverrides;
+    expect(overrides[`${first}|e-standard`]).toEqual(overrides[`${third}|e-standard`]);
+    expect(useRhythmStore.getState().params.slotCount).toBe(3);
+    expect(useRhythmStore.getState().optimization?.fingers).toHaveLength(3);
+  });
+
+  it('forgets lab voicings of steps that left the RiffBar', async () => {
+    const { useRhythmStore, useRiffStore } = await freshStores();
+    useRiffStore.getState().addStep(E5_STEP);
+    useRiffStore.getState().addStep(G5_STEP);
+    const [first, second] = useRiffStore.getState().steps.map((s) => s.key);
+    useRhythmStore.getState().setProgressionShape(first, [12, 14, 14, null, null, null]);
+    useRiffStore.getState().removeStep(first);
+    useRhythmStore.getState().setProgressionShape(second, [15, 17, 17, null, null, null]);
+    expect(Object.keys(useRhythmStore.getState().progressionOverrides)).toEqual([`${second}|e-standard`]);
+  });
+
+  it('needs two chords before it can optimize the RiffBar', async () => {
+    const { useRhythmStore, useRiffStore } = await freshStores();
+    useRiffStore.getState().addStep(E5_STEP);
+    const out = useRhythmStore.getState().optimizeHarmony(DEFAULT_HAND_PROFILE, E_STANDARD);
+    expect(out.ok).toBe(false);
+  });
+});

@@ -341,7 +341,9 @@ export const VoicingFinder: React.FC<VoicingFinderProps> = ({ onOpenHandProfile,
         id: `finder:${family.id}:${tab}`,
         name: voicing.name,
         subtext: `${family.label} · ${tab}`,
-        notes: shapeToMidi(voicing.shape, tuning).map(midiToName)
+        notes: shapeToMidi(voicing.shape, tuning).map(midiToName),
+        shape: voicing.shape,
+        tuningId: tuning.id
       });
       setActionMessage(added ? `Added ${voicing.name} to the riff.` : `The riff is full (${MAX_RIFF_STEPS} steps).`);
     },
@@ -359,7 +361,7 @@ export const VoicingFinder: React.FC<VoicingFinderProps> = ({ onOpenHandProfile,
       });
       setActionMessage(
         added
-          ? `${voicing.name} is now Rhythm Lab slot ${useRhythmStore.getState().slots.length}.`
+          ? `${voicing.name} is now Rhythm Lab slot ${useRhythmStore.getState().slots.length}; the lab plays its own slots.`
           : `The Rhythm Lab already has ${MAX_RHYTHM_SLOTS} chord slots.`
       );
     },

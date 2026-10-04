@@ -9,7 +9,7 @@ interface RhythmStylePanelProps {
   onAnnounce: (message: string) => void;
 }
 
-interface SegmentOption<T> {
+export interface SegmentOption<T> {
   value: T;
   label: string;
   aria: string;
@@ -25,7 +25,7 @@ const PICKING_OPTIONS: SegmentOption<PickingMode>[] = [
   { value: 'downstrokes', label: 'Downs', aria: 'All downstrokes' }
 ];
 
-const Segmented = <T extends string | number>({
+export const Segmented = <T extends string | number>({
   label,
   options,
   value,

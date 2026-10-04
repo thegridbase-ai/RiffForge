@@ -24,6 +24,11 @@ const pedalNote = (slot: HarmonySlot | undefined, tuning: Tuning): number | null
   return notes && notes.length > 0 ? Math.min(...notes) : (tuning.openMidi[0] ?? null);
 };
 
+/** Picks the harmony slot by time instead of by the event's own slot index (chord progressions). */
+export interface PlaybackOptions {
+  slotAt?: (tick: number) => number;
+}
+
 const targetNotes = (target: HitTarget, slots: readonly HarmonySlot[], tuning: Tuning, activeSlot: number): number[] | null => {
   switch (target.kind) {
     case 'slot':
@@ -48,17 +53,28 @@ interface SoundingNote {
 
 /**
  * Pedal and dead hits use the active slot: the slot of the most recent slot/dyad hit that sounded (slot 0
- * before any). Hits whose slot is missing (or whose shape does not fit the tuning) are skipped, and a tie
- * after a skipped hit extends nothing.
+ * before any). With `slotAt`, every hit uses the slot of its own time instead, so chord and pedal hits follow a
+ * progression bar by bar. Hits whose slot is missing (or whose shape does not fit the tuning) are skipped, and a
+ * tie after a skipped hit extends nothing.
  */
-const resolveNotes = (pattern: RhythmPattern, slots: readonly HarmonySlot[], tuning: Tuning): SoundingNote[] => {
+const resolveNotes = (
+  pattern: RhythmPattern,
+  slots: readonly HarmonySlot[],
+  tuning: Tuning,
+  options: PlaybackOptions = {}
+): SoundingNote[] => {
   const notes: SoundingNote[] = [];
   let activeSlot = 0;
   let current: SoundingNote | null = null;
-  for (const event of pattern.events) {
-    if (event.tie) {
-      if (current) current.gridTicks += event.durationTicks;
+  for (const raw of pattern.events) {
+    if (raw.tie) {
+      if (current) current.gridTicks += raw.durationTicks;
       continue;
+    }
+    let event = raw;
+    if (options.slotAt) {
+      activeSlot = options.slotAt(raw.tick);
+      if (raw.target.kind === 'slot' || raw.target.kind === 'dyad') event = { ...raw, target: { kind: raw.target.kind, slot: activeSlot } };
     }
     const midi = targetNotes(event.target, slots, tuning, activeSlot);
     if (!midi || midi.length === 0) {
@@ -89,11 +105,12 @@ export const rhythmToPlaybackEvents = (
   pattern: RhythmPattern,
   slots: readonly HarmonySlot[],
   tuning: Tuning,
-  bpm: number
+  bpm: number,
+  options: PlaybackOptions = {}
 ): PlaybackEvent[] => {
   if (!(bpm > 0)) return [];
   const secPerTick = 60 / (PPQ * bpm);
-  return resolveNotes(pattern, slots, tuning).map(({ event, midi, gridTicks }) => {
+  return resolveNotes(pattern, slots, tuning, options).map(({ event, midi, gridTicks }) => {
     const gridSec = gridTicks * secPerTick;
     const durationSec =
       event.target.kind === 'dead'
@@ -118,8 +135,13 @@ export const rhythmToPlaybackEvents = (
  * One note per distinct pitch, sorted by tick then pitch. Velocity = round(playback velocity * 127) in 1..127;
  * duration in ticks follows the playback rules (palm mute max(1, round(0.35 * d)), dead notes min(30, d)).
  */
-export const rhythmToMidiNotes = (pattern: RhythmPattern, slots: readonly HarmonySlot[], tuning: Tuning): MidiNoteEvent[] =>
-  resolveNotes(pattern, slots, tuning).flatMap(({ event, midi, gridTicks }) => {
+export const rhythmToMidiNotes = (
+  pattern: RhythmPattern,
+  slots: readonly HarmonySlot[],
+  tuning: Tuning,
+  options: PlaybackOptions = {}
+): MidiNoteEvent[] =>
+  resolveNotes(pattern, slots, tuning, options).flatMap(({ event, midi, gridTicks }) => {
     const durationTicks =
       event.target.kind === 'dead'
         ? Math.min(DEAD_NOTE_TICKS, gridTicks)

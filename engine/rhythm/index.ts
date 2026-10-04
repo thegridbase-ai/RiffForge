@@ -19,4 +19,13 @@ export { mutateRhythm, regenerateRhythm } from './variation';
 export { validateRhythm, type RhythmValidateOptions } from './validate';
 export { assignPicks } from './picking';
 export { toggleHit, cycleAccent, togglePalmMute, clearHit, eventAtUnit, eventsInUnit, setSlotCount } from './edit';
-export { rhythmToPlaybackEvents, rhythmToMidiNotes, hitVelocity } from './playback';
+export { rhythmToPlaybackEvents, rhythmToMidiNotes, hitVelocity, type PlaybackOptions } from './playback';
+export {
+  arrangeProgression,
+  changeTicksFor,
+  progressionChangeBeats,
+  MAX_PROGRESSION_CHORDS,
+  MAX_ARRANGEMENT_BARS,
+  type ProgressionArrangement,
+  type ProgressionChange
+} from './progression';
