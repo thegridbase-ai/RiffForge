@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Chord } from '../types';
 import type { Tuning } from '../engine/types';
-import { buildChordExplorerUrl, buildExplorerUrl } from '../utils/chordExplorer';
+import { buildExplorerUrl } from '../utils/chordExplorer';
 import { VoicingTab } from './VoicingTab';
 
 interface ChordCardProps {
@@ -39,6 +39,12 @@ export const ChordCard: React.FC<ChordCardProps> = ({
   const [glowPosition, setGlowPosition] = useState({ x: 0, y: 0 });
   const [isHovering, setIsHovering] = useState(false);
   const [hasAnimated, setHasAnimated] = useState(skipInitialAnimation);
+  // Link by what sounds; Chord Explorer is E Standard only, so a Drop D shape stays out of the link.
+  // No link when Chord Explorer has no type for the sound.
+  const explorerTarget = chord.voicing?.explorer ?? chord.explorer;
+  const explorerUrl = explorerTarget
+    ? buildExplorerUrl(explorerTarget, chord.voicing && tuning.id === 'e-standard' ? chord.voicing.shape : undefined)
+    : null;
 
   // Mark as animated after first render
   useEffect(() => {
@@ -416,42 +422,39 @@ export const ChordCard: React.FC<ChordCardProps> = ({
           <div className="flex justify-between items-center gap-2 mb-2">
             <div className="flex items-center gap-2">
               <span className="font-mono text-[10px] text-neutral-400">TABLATURE</span>
-              <motion.a
-                // Link by what sounds; Chord Explorer is E Standard only, so a Drop D shape stays out of the link
-                href={
-                  chord.voicing
-                    ? buildExplorerUrl(chord.voicing.explorer, tuning.id === 'e-standard' ? chord.voicing.shape : undefined)
-                    : buildChordExplorerUrl(chord)
-                }
-                target="_blank"
-                rel="noopener"
-                aria-label="Open in Chord Explorer"
-                title="Open in Chord Explorer"
-                onClick={(e) => e.stopPropagation()}
-                className={`
-                  w-7 h-7 flex items-center justify-center rounded-full border border-white/10 text-neutral-500
-                  transition-colors duration-200
-                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
-                  ${isDistorted ? 'hover:text-rose-400 hover:border-rose-500/50 focus-visible:ring-rose-500' : 'hover:text-cyan-400 hover:border-cyan-500/50 focus-visible:ring-cyan-500'}
-                `}
-                whileHover={{ scale: 1.15 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                <svg
-                  className="w-3 h-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+              {explorerUrl && (
+                <motion.a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="Open in Chord Explorer"
+                  title="Open in Chord Explorer"
+                  onClick={(e) => e.stopPropagation()}
+                  className={`
+                    w-7 h-7 flex items-center justify-center rounded-full border border-white/10 text-neutral-500
+                    transition-colors duration-200
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
+                    ${isDistorted ? 'hover:text-rose-400 hover:border-rose-500/50 focus-visible:ring-rose-500' : 'hover:text-cyan-400 hover:border-cyan-500/50 focus-visible:ring-cyan-500'}
+                  `}
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: 0.9 }}
                 >
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </motion.a>
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </motion.a>
+              )}
             </div>
             {chord.voicing && (
               <span

@@ -151,7 +151,7 @@ export const noveltyPercent = (novelty: number): number => Math.round(Math.min(1
  * one (no type for power chords, dyads, the tritone, fourths, quartal stacks and clusters, which Chord Explorer
  * cannot show), and the exact shape only in E Standard, the only tuning Chord Explorer knows.
  */
-export const finderExplorerUrl = (root: string, familyId: string, voicing: GeneratedVoicing, tuning: Tuning): string =>
+export const finderExplorerUrl = (root: string, familyId: string, voicing: GeneratedVoicing, tuning: Tuning): string | null =>
   buildExplorerUrl({ root, type: explorerTypeForFamily(familyId) }, tuning.id === 'e-standard' ? voicing.shape : undefined);
 
 // ---------------------------------------------------------------------------

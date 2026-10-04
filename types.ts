@@ -35,6 +35,8 @@ export interface Chord {
   voicing?: LibraryVoicing;
   /** Present on resolved cards without a playable shape for the current hand profile. */
   unplayableReason?: string;
+  /** Chord Explorer target for a card without a playable shape, from its curated notes. */
+  explorer?: { root: string; type?: ChordExplorerType };
 }
 
 export enum TuningMode {

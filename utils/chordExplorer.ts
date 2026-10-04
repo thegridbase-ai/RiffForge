@@ -149,10 +149,14 @@ export const explorerTypeForIntervals = (intervals: readonly number[]): ChordExp
   return undefined;
 };
 
-/** Chord Explorer URL for a target; the exact shape travels as gv (callers send it only in E Standard). */
-export const buildExplorerUrl = (target: ExplorerTarget, shape?: readonly (number | null)[]): string => {
-  const params = [`root=${encodeURIComponent(target.root)}`];
-  if (target.type) params.push(`type=${encodeURIComponent(TYPE_PARAM[target.type])}`);
+/**
+ * Chord Explorer URL for a target; the exact shape travels as gv (callers send it only in E Standard). Null when
+ * Chord Explorer has no type for the sound (power chords, dyads, quartal stacks, clusters): a link without a type
+ * would open its default chord, a label the shape does not sound.
+ */
+export const buildExplorerUrl = (target: ExplorerTarget, shape?: readonly (number | null)[]): string | null => {
+  if (!target.type) return null;
+  const params = [`root=${encodeURIComponent(target.root)}`, `type=${encodeURIComponent(TYPE_PARAM[target.type])}`];
   if (shape) params.push(`gv=${shapeToGvParam(shape)}`);
   return `${CHORD_EXPLORER_BASE_URL}?${params.join('&')}`;
 };

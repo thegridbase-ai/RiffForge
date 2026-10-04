@@ -4,7 +4,7 @@ import { generateRhythm, sanitizeRhythmParams } from '../engine/rhythm/generate'
 import { RHYTHM_STYLE_IDS, defaultRhythmParams } from '../engine/rhythm/styles';
 import { mutateRhythm, regenerateRhythm } from '../engine/rhythm/variation';
 import { validateRhythm } from '../engine/rhythm/validate';
-import { clearHit, cycleAccent, togglePalmMute, toggleHit } from '../engine/rhythm/edit';
+import { clearHit, cycleAccent, setSlotCount, togglePalmMute, toggleHit } from '../engine/rhythm/edit';
 import { barTicks } from '../engine/rhythm/grid';
 import { getTuning } from '../engine/tuning';
 import { isValidShape } from '../engine/shape';
@@ -149,6 +149,22 @@ export const regenerateKeepingLocks = (
 const eventsInBars = (pattern: RhythmPattern, bars: readonly number[]): string => {
   const bar = barTicks(pattern.meter);
   return JSON.stringify(pattern.events.filter((e) => bars.includes(Math.floor(e.tick / bar))));
+};
+
+/**
+ * True when an unlocked bar no longer matches what params + seed generate, i.e. the player edited or mutated it.
+ * Locked bars are the player's by definition and are kept by regenerateKeepingLocks anyway.
+ */
+export const hasUnlockedChanges = (
+  pattern: RhythmPattern,
+  params: RhythmParams,
+  seed: string,
+  lockedBars: readonly number[]
+): boolean => {
+  const fresh = generateRhythm(params, seed);
+  if (fresh.bars !== pattern.bars || !sameMeter(fresh.meter, pattern.meter) || fresh.params.grid !== pattern.params.grid) return true;
+  const unlocked = Array.from({ length: pattern.bars }, (_, bar) => bar).filter((bar) => !lockedBars.includes(bar));
+  return eventsInBars(pattern, unlocked) !== eventsInBars(fresh, unlocked);
 };
 
 const MUTATE_ATTEMPTS = 8;
@@ -305,12 +321,19 @@ const initial = loadRhythm();
 let mutationRound = 0;
 
 export const useRhythmStore = create<RhythmStore>((set, get) => {
-  /** New slots: keeps params.slotCount in sync and regenerates (same seed, locks kept) when the count changes. */
+  /**
+   * New slots: keeps params.slotCount in sync when the count changes. An untouched pattern is regenerated (same
+   * seed, locks kept) so every slot gets its chord changes; edited or mutated events are kept, with slot targets
+   * folded into range.
+   */
   const withSlots = (slots: RhythmSlot[]): Partial<RhythmStore> => {
     const state = get();
     const count = slotCountFor(slots);
     if (count === state.params.slotCount) return { slots, optimization: null };
     const params = { ...state.params, slotCount: count };
+    if (hasUnlockedChanges(state.pattern, state.params, state.seed, state.lockedBars)) {
+      return { slots, params, pattern: setSlotCount(state.pattern, count), optimization: null };
+    }
     const { pattern, lockedBars } = regenerateKeepingLocks(state.pattern, params, state.seed, state.lockedBars);
     return { slots, params, pattern, lockedBars, optimization: null };
   };
@@ -446,3 +469,14 @@ export const useRhythmStore = create<RhythmStore>((set, get) => {
 useRhythmStore.subscribe((state, prev) => {
   if (PERSISTED_KEYS.some((key) => state[key] !== prev[key])) saveRhythm(state);
 });
+
+/**
+ * Restarts playback after `delayMs` (pattern, slot, tuning or tempo changes mid-playback), but only while the lab
+ * is still playing when the timer fires, so a Stop pressed in between is never undone. Returns a cancel function.
+ */
+export const scheduleRhythmRestart = (restart: () => void, delayMs: number): (() => void) => {
+  const timer = setTimeout(() => {
+    if (useRhythmStore.getState().isPlaying) restart();
+  }, delayMs);
+  return () => clearTimeout(timer);
+};

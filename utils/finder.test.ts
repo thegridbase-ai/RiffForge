@@ -166,11 +166,12 @@ describe('Chord Explorer mapping', () => {
     }
   });
 
-  it('builds power chord links without a type', () => {
-    const power = findVoicings(query({ tuning: E_STANDARD, familyId: 'power5' })).voicings[0];
-    const url = finderExplorerUrl('E', 'power5', power, E_STANDARD);
-    expect(url).toMatch(/^https:\/\/chords\.thegridbase\.com\/\?root=E&gv=/);
-    expect(url).not.toContain('type=');
+  it('gives no link for families Chord Explorer has no type for, rather than a typeless one it would open as minor', () => {
+    for (const familyId of ['power5', 'dyad_b2', 'tritone', 'quartal', 'cluster_m2']) {
+      const voicing = findVoicings(query({ tuning: E_STANDARD, familyId })).voicings[0];
+      expect(voicing, familyId).toBeDefined();
+      expect(finderExplorerUrl('E', familyId, voicing, E_STANDARD), familyId).toBeNull();
+    }
   });
 
   it('sends the shape only in E Standard', () => {

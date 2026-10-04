@@ -93,6 +93,13 @@ const toLibraryVoicing = (
   }
 });
 
+/** Chord Explorer target from a curated recipe (notes relative to baseRoot), moved to the selected root. */
+export const curatedExplorerTarget = (chord: Pick<Chord, 'notes' | 'baseRoot'>, targetRoot: string): LibraryVoicing['explorer'] => {
+  const base = parsePitchClass(chord.baseRoot) ?? 0;
+  const midi = chord.notes.map(parseNoteName).filter((m): m is number => m !== null);
+  return { root: targetRoot, type: midi.length > 0 ? explorerTypeForIntervals(midi.map((m) => pitchClass(m - base))) : undefined };
+};
+
 const cache = new Map<string, LibraryResolution>();
 
 export const resolveLibraryVoicing = (
@@ -169,6 +176,8 @@ export const resolveLibraryChord = (
     notes: voicing ? voicing.notes : [],
     fretboard: voicing ? voicing.tab : undefined,
     voicing: voicing ?? undefined,
-    unplayableReason: unplayableReason ?? undefined
+    unplayableReason: unplayableReason ?? undefined,
+    // Without a shape, link by the curated sound at the selected root, never by the nickname
+    explorer: voicing ? undefined : curatedExplorerTarget(chord, targetRoot)
   };
 };

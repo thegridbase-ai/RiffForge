@@ -270,6 +270,51 @@ describe('rhythmStore slots', () => {
     expect(store.getState().pattern.events.map((e) => [e.tick, e.durationTicks, e.accent, e.palmMute])).toEqual(ticks);
   });
 
+  it('keeps a hand edit in an unlocked bar when a slot is added', async () => {
+    const store = await freshStore();
+    store.getState().addSlot(E5);
+    const before = store.getState().pattern.events;
+    store.getState().toggleHitAt(3, { kind: 'dead' });
+    const edited = store.getState().pattern;
+    expect(edited.events).not.toEqual(before);
+    expect(edited.events.some((e) => e.target.kind === 'dead')).toBe(true);
+    expect(store.getState().lockedBars).toEqual([]);
+
+    expect(store.getState().addSlot(G5)).toBe(true);
+    const after = store.getState().pattern;
+    expect(store.getState().params.slotCount).toBe(2);
+    expect(after.params.slotCount).toBe(2);
+    expect(after.events).toEqual(edited.events);
+    expect(validateRhythm(after).ok).toBe(true);
+  });
+
+  it('keeps a hand edit and folds slots into range when a slot is removed', async () => {
+    const store = await freshStore();
+    store.getState().addSlot(E5);
+    store.getState().addSlot(G5);
+    store.getState().addSlot(A5);
+    store.getState().toggleHitAt(3, { kind: 'dead' });
+    const deadTicks = store.getState().pattern.events.filter((e) => e.target.kind === 'dead').map((e) => e.tick);
+    expect(deadTicks.length).toBeGreaterThan(0);
+
+    store.getState().removeSlot(store.getState().slots[2].id);
+    const after = store.getState().pattern;
+    expect(after.params.slotCount).toBe(2);
+    expect(after.events.filter((e) => e.target.kind === 'dead').map((e) => e.tick)).toEqual(deadTicks);
+    expect(Math.max(...slotsUsed(after))).toBeLessThan(2);
+    expect(validateRhythm(after).ok).toBe(true);
+  });
+
+  it('keeps a mutated pattern when the slot count changes', async () => {
+    const store = await freshStore();
+    store.getState().addSlot(E5);
+    store.getState().addSlot(G5);
+    expect(store.getState().mutate()).toBe(true);
+    const mutated = store.getState().pattern.events;
+    store.getState().addSlot(A5);
+    expect(store.getState().pattern.events).toEqual(mutated);
+  });
+
   it('rejects slots that do not fit their tuning', async () => {
     const store = await freshStore();
     expect(store.getState().addSlot({ ...E5, shape: [0, 2, 2] })).toBe(false);
@@ -356,5 +401,35 @@ describe('rhythmStore style and params', () => {
     expect(store.getState().pattern.events.every((e) => e.pick === 'down')).toBe(true);
     store.getState().setParam({ bars: 3 });
     expect(store.getState().params.bars).toBe(4);
+  });
+});
+
+describe('scheduleRhythmRestart', () => {
+  it('restarts while playing, but never after Stop or cancel', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.resetModules();
+      const { scheduleRhythmRestart, useRhythmStore } = await import('./rhythmStore');
+      const restart = vi.fn();
+
+      useRhythmStore.getState().setIsPlaying(true);
+      scheduleRhythmRestart(restart, 60);
+      vi.advanceTimersByTime(60);
+      expect(restart).toHaveBeenCalledTimes(1);
+
+      scheduleRhythmRestart(restart, 60);
+      vi.advanceTimersByTime(30);
+      useRhythmStore.getState().setIsPlaying(false);
+      vi.advanceTimersByTime(30);
+      expect(restart).toHaveBeenCalledTimes(1);
+
+      useRhythmStore.getState().setIsPlaying(true);
+      const cancel = scheduleRhythmRestart(restart, 60);
+      cancel();
+      vi.advanceTimersByTime(60);
+      expect(restart).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

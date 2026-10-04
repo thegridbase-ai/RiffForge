@@ -148,6 +148,7 @@ const FinderCard: React.FC<FinderCardProps> = ({
   onSlot
 }) => {
   const tab = toRiffForgeTab(voicing.shape);
+  const explorerUrl = finderExplorerUrl(root, family.id, voicing, tuning);
   const tags = voicingTagLabels(voicing.tags);
   const ring = ringClass(isDistorted);
   const roundButton = `shrink-0 w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-full border transition-colors duration-200 ${ring}`;
@@ -240,20 +241,22 @@ const FinderCard: React.FC<FinderCardProps> = ({
           </svg>
           Slot
         </button>
-        <a
-          href={finderExplorerUrl(root, family.id, voicing, tuning)}
-          target="_blank"
-          rel="noopener"
-          aria-label={`Open ${voicing.name} in Chord Explorer (new tab)`}
-          title="Open in Chord Explorer"
-          className={`${roundButton} ml-auto border-white/10 text-neutral-400 ${isDistorted ? 'hover:text-rose-400 hover:border-rose-500/50' : 'hover:text-cyan-400 hover:border-cyan-500/50'}`}
-        >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            <polyline points="15 3 21 3 21 9" />
-            <line x1="10" y1="14" x2="21" y2="3" />
-          </svg>
-        </a>
+        {explorerUrl && (
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noopener"
+            aria-label={`Open ${voicing.name} in Chord Explorer (new tab)`}
+            title="Open in Chord Explorer"
+            className={`${roundButton} ml-auto border-white/10 text-neutral-400 ${isDistorted ? 'hover:text-rose-400 hover:border-rose-500/50' : 'hover:text-cyan-400 hover:border-cyan-500/50'}`}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+          </a>
+        )}
       </div>
     </motion.article>
   );

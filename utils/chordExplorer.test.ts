@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRoot, mapToExplorerType, buildChordExplorerUrl, shapeToGvParam } from './chordExplorer';
+import { parseRoot, mapToExplorerType, buildChordExplorerUrl, buildExplorerUrl, explorerTypeForIntervals, shapeToGvParam } from './chordExplorer';
 
 describe('parseRoot', () => {
   it('extracts natural and sharp roots from the name', () => {
@@ -108,5 +108,28 @@ describe('parseRoot fallback', () => {
   it('reads flat roots and returns sharps', () => {
     expect(parseRoot('Bb(VI)', '')).toBe('A#');
     expect(parseRoot('Ebm7', '')).toBe('D#');
+  });
+});
+
+describe('buildExplorerUrl', () => {
+  it('keeps links for sounds Chord Explorer has a type for', () => {
+    expect(buildExplorerUrl({ root: 'E', type: 'major' })).toBe('https://chords.thegridbase.com/?root=E&type=Major');
+    expect(buildExplorerUrl({ root: 'A', type: 'minor' }, [null, 0, 2, 2, 1, 0])).toBe(
+      'https://chords.thegridbase.com/?root=A&type=minor&gv=x-0-2-2-1-0'
+    );
+    expect(buildExplorerUrl({ root: 'C#', type: 'm7' })).toBe('https://chords.thegridbase.com/?root=C%23&type=m7');
+  });
+
+  it('builds no link without a type, so Chord Explorer never shows E5 as its default minor', () => {
+    expect(buildExplorerUrl({ root: 'E' }, [0, 2, 2, null, null, null])).toBeNull();
+    expect(buildExplorerUrl({ root: 'E', type: undefined })).toBeNull();
+  });
+
+  it('types power chords, dyads, quartal stacks and clusters as nothing', () => {
+    expect(explorerTypeForIntervals([0, 7, 0])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 1])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 5, 10])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 1, 2])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 3, 7, 0])).toBe('minor');
   });
 });

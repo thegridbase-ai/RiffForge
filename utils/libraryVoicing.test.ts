@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveLibraryChord, resolveLibraryVoicing, moveShape, shapeDistance, tuningForMode } from './libraryVoicing';
+import { curatedExplorerTarget, resolveLibraryChord, resolveLibraryVoicing, moveShape, shapeDistance, tuningForMode } from './libraryVoicing';
 import { DEFAULT_HAND_PROFILE, profileFromCalibration, DEFAULT_CALIBRATION } from '../engine/handProfile';
 import { fromRiffForgeTab, shapeToMidi } from '../engine/shape';
 import { midiToName, pitchClass, parsePitchClass, parseNoteName } from '../engine/pitch';
@@ -198,13 +198,20 @@ describe('Chord Explorer target', () => {
     expect(sus2).toBeGreaterThan(0);
   });
 
-  it('omits the type for sounds Chord Explorer has no type for', () => {
+  it('gives no link for sounds Chord Explorer has no type for', () => {
     const omen = find('standard-dark.json', 'dark-1');
     const resolved = resolveLibraryChord(omen, 'E', TuningMode.STANDARD, DEFAULT_HAND_PROFILE);
     expect(resolved.voicing!.soundsAs).toBe('E5(b9)');
     expect(resolved.voicing!.explorer).toEqual({ root: 'E', type: undefined });
-    expect(buildExplorerUrl(resolved.voicing!.explorer, resolved.voicing!.shape)).toBe(
-      `https://chords.thegridbase.com/?root=E&gv=${resolved.voicing!.shape.map((f) => (f === null ? 'x' : f)).join('-')}`
-    );
+    expect(buildExplorerUrl(resolved.voicing!.explorer, resolved.voicing!.shape)).toBeNull();
+    expect(resolved.explorer).toBeUndefined();
+  });
+
+  it('links a card without a playable shape by its curated sound at the selected root, not its nickname', () => {
+    const ghost = find('drop-melodic.json', 'drop-melodic-1');
+    expect(curatedExplorerTarget(ghost, 'C')).toEqual({ root: 'C', type: 'minor' });
+    const omen = find('standard-dark.json', 'dark-1');
+    expect(curatedExplorerTarget(omen, 'G')).toEqual({ root: 'G', type: undefined });
+    expect(curatedExplorerTarget({ notes: ['??'], baseRoot: 'E' }, 'A')).toEqual({ root: 'A', type: undefined });
   });
 });

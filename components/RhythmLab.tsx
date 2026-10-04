@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { audioEngine } from '../services/audioEngine';
 import { useChordStore } from '../stores/chordStore';
 import { useRiffStore } from '../stores/riffStore';
-import { useRhythmHandProfile, useRhythmStore } from '../stores/rhythmStore';
+import { scheduleRhythmRestart, useRhythmHandProfile, useRhythmStore } from '../stores/rhythmStore';
 import { gridUnitTicks } from '../engine/rhythm/grid';
 import { rhythmToPlaybackEvents } from '../engine/rhythm/playback';
 import { validateRhythm } from '../engine/rhythm/validate';
@@ -115,8 +115,7 @@ export const RhythmLab: React.FC = () => {
   // Restart cleanly (same loop position) when the pattern, slots, tuning or tempo change mid-playback
   useEffect(() => {
     if (!useRhythmStore.getState().isPlaying) return;
-    const timer = window.setTimeout(play, RESTART_DELAY_MS);
-    return () => window.clearTimeout(timer);
+    return scheduleRhythmRestart(play, RESTART_DELAY_MS);
   }, [pattern, harmony, tuning, bpm, play]);
 
   useEffect(
