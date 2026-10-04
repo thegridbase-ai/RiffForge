@@ -360,7 +360,7 @@ const App: React.FC = () => {
 
       <div className="fixed inset-0 opacity-[0.02] pointer-events-none bg-[url('/noise.svg')]"></div>
 
-      <div className={`relative z-10 max-w-7xl mx-auto px-6 py-12 flex flex-col min-h-screen ${riffBarVisible ? 'pb-40 md:pb-28' : ''} ${isDistorted ? 'glitch-active' : ''}`}>
+      <div className={`relative z-10 max-w-7xl mx-auto px-6 py-12 flex flex-col min-h-screen ${riffBarVisible ? 'pb-40 md:pb-28' : ''}`}>
         <motion.header
           className="mb-12 text-center"
           initial={{ opacity: 0, y: -30 }}

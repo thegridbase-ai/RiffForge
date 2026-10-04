@@ -20,20 +20,6 @@
   background: #555; 
 }
 
-/* Glitch Effect Keyframes */
-@keyframes glitch {
-  0% { transform: translate(0); }
-  20% { transform: translate(-2px, 2px); }
-  40% { transform: translate(-2px, -2px); }
-  60% { transform: translate(2px, 2px); }
-  80% { transform: translate(2px, -2px); }
-  100% { transform: translate(0); }
-}
-
-.glitch-active {
-  animation: glitch 0.2s cubic-bezier(.25, .46, .45, .94) both infinite;
-}
-
 /* CRT Scanline Effect */
 .scanlines {
   background: linear-gradient(
