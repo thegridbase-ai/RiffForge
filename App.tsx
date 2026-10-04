@@ -656,7 +656,7 @@ const App: React.FC = () => {
 
                         <div className={`w-px h-6 ${isDistorted ? 'bg-rose-500/40' : 'bg-cyan-500/40'}`} />
 
-                        <span className="font-['Oswald'] text-lg text-neutral-200 uppercase tracking-wide">
+                        <span className="font-['Oswald'] text-lg text-neutral-200 tracking-wide">
                           {lockedChord.name}
                         </span>
 

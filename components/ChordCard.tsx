@@ -147,6 +147,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
 
         {/* Background Text Faded - First 2 letters of chord name */}
         <motion.span
+          aria-hidden="true"
           className="absolute -right-4 -bottom-8 text-9xl font-['Oswald'] font-bold text-white select-none pointer-events-none"
           initial={{ opacity: 0.03 }}
           whileHover={{ opacity: 0.08 }}
