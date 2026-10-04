@@ -285,7 +285,7 @@ export const RiffBar: React.FC = () => {
                           `}
                         >
                           <span className="text-neutral-500 mr-0.5">{index + 1}</span>
-                          <span className="max-w-[140px] truncate">{step.name}</span>
+                          <span className="max-w-[140px] truncate normal-case">{step.name}</span>
                           <button
                             type="button"
                             aria-label={`Remove ${step.name} from riff`}

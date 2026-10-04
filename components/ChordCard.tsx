@@ -1,10 +1,13 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Chord } from '../types';
-import { buildChordExplorerUrl } from '../utils/chordExplorer';
+import type { Tuning } from '../engine/types';
+import { buildExplorerUrl } from '../utils/chordExplorer';
+import { VoicingTab } from './VoicingTab';
 
 interface ChordCardProps {
   chord: Chord;
+  tuning: Tuning;
   isDistorted: boolean;
   onPlay: (chord: Chord) => void;
   onLockToggle?: (chord: Chord) => void;
@@ -19,6 +22,7 @@ interface ChordCardProps {
 
 export const ChordCard: React.FC<ChordCardProps> = ({
   chord,
+  tuning,
   isDistorted,
   onPlay,
   onLockToggle,
@@ -35,6 +39,12 @@ export const ChordCard: React.FC<ChordCardProps> = ({
   const [glowPosition, setGlowPosition] = useState({ x: 0, y: 0 });
   const [isHovering, setIsHovering] = useState(false);
   const [hasAnimated, setHasAnimated] = useState(skipInitialAnimation);
+  // Link by what sounds; Chord Explorer is E Standard only, so a Drop D shape stays out of the link.
+  // No link when Chord Explorer has no type for the sound.
+  const explorerTarget = chord.voicing?.explorer ?? chord.explorer;
+  const explorerUrl = explorerTarget
+    ? buildExplorerUrl(explorerTarget, chord.voicing && tuning.id === 'e-standard' ? chord.voicing.shape : undefined)
+    : null;
 
   // Mark as animated after first render
   useEffect(() => {
@@ -73,6 +83,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
     : 'rgba(8, 145, 178, 0.4)';
 
   const accentColor = isDistorted ? 'rose' : 'cyan';
+  const addable = canAddToRiff && !!chord.voicing;
 
   return (
     <motion.div
@@ -101,9 +112,9 @@ export const ChordCard: React.FC<ChordCardProps> = ({
         }}
       />
 
-      {/* Main Card */}
-      <motion.div
-        className="relative overflow-hidden p-6 text-left transition-all duration-300 group w-full h-full flex flex-col justify-between rounded-lg"
+      {/* Main Card: CSS press feedback; Framer's whileTap would make this wrapper a tab stop */}
+      <div
+        className="relative overflow-hidden p-6 text-left transition-all duration-300 group w-full h-full flex flex-col justify-between rounded-lg active:scale-[0.98] motion-reduce:active:scale-100"
         style={{
           pointerEvents: 'auto',
           ...(isLocked
@@ -129,16 +140,6 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 }
           )
         }}
-        whileTap={{ scale: 0.98 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-        onClick={(e) => {
-          const target = e.target as HTMLElement;
-          if (target.closest('button[aria-label="Lock as main chord"]')) {
-            e.stopPropagation();
-            e.preventDefault();
-            return;
-          }
-        }}
       >
         {/* Border Glow on Hover */}
         <motion.div
@@ -152,6 +153,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
 
         {/* Background Text Faded - First 2 letters of chord name */}
         <motion.span
+          aria-hidden="true"
           className="absolute -right-4 -bottom-8 text-9xl font-['Oswald'] font-bold text-white select-none pointer-events-none"
           initial={{ opacity: 0.03 }}
           whileHover={{ opacity: 0.08 }}
@@ -170,7 +172,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
               e.stopPropagation();
               return;
             }
-            onPlay(chord);
+            if (chord.voicing) onPlay(chord);
           }}
           className="relative z-10 w-full text-left flex-1 flex flex-col cursor-pointer"
           style={{ pointerEvents: 'auto' }}
@@ -182,7 +184,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 <AnimatePresence mode="wait">
                   <motion.h3
                     key={chord.name}
-                    className={`font-['Oswald'] text-2xl uppercase tracking-wide text-neutral-100`}
+                    className={`font-['Oswald'] text-2xl tracking-wide text-neutral-100 break-words`}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
@@ -217,14 +219,14 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                 <motion.button
                   type="button"
                   aria-label={`Add ${chord.name} to riff`}
-                  title={canAddToRiff ? 'Add to riff' : 'Riff is full (16 steps)'}
-                  disabled={!canAddToRiff}
-                  className={`relative w-10 h-10 rounded-full flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'} ${canAddToRiff ? 'cursor-pointer' : 'cursor-default opacity-40'}`}
-                  whileHover={canAddToRiff ? { scale: 1.1 } : undefined}
-                  whileTap={canAddToRiff ? { scale: 0.9 } : undefined}
+                  title={!chord.voicing ? 'No playable shape to add' : canAddToRiff ? 'Add to riff' : 'Riff is full (16 steps)'}
+                  disabled={!addable}
+                  className={`relative w-10 h-10 rounded-full flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'} ${addable ? 'cursor-pointer' : 'cursor-default opacity-40'}`}
+                  whileHover={addable ? { scale: 1.1 } : undefined}
+                  whileTap={addable ? { scale: 0.9 } : undefined}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (canAddToRiff) onAddToRiff(chord);
+                    if (addable) onAddToRiff(chord);
                   }}
                   style={{
                     zIndex: 10,
@@ -296,28 +298,14 @@ export const ChordCard: React.FC<ChordCardProps> = ({
 
               {/* Lock Button - Animated */}
               {onLockToggle && (
-                <motion.div
-                  className="relative shrink-0"
-                  style={{ pointerEvents: 'auto', zIndex: 10 }}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    e.nativeEvent.stopImmediatePropagation();
-                    if (onLockToggle) onLockToggle(chord);
-                  }}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                  }}
-                >
+                <div className="relative shrink-0" style={{ pointerEvents: 'auto', zIndex: 10 }}>
                   <motion.button
                     type="button"
-                    className={`relative w-10 h-10 rounded-full flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}`}
+                    className={`relative w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-transform duration-150 hover:scale-110 active:scale-90 motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}`}
                     data-locked={isLocked ? 'true' : 'false'}
-                    title={isLocked ? "Unlock chord" : "Lock chord"}
-                    aria-label={isLocked ? "Unlock chord" : "Lock chord"}
+                    title="Lock chord and show related variations"
+                    aria-label={`Lock ${chord.name}`}
+                    aria-pressed={isLocked}
                     style={{
                       pointerEvents: 'auto',
                       position: 'relative',
@@ -341,8 +329,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                     transition={{ duration: 2, repeat: isLocked ? Infinity : 0 }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      e.preventDefault();
-                      if (onLockToggle) onLockToggle(chord);
+                      onLockToggle(chord);
                     }}
                   >
                     {/* Lock Icon SVG */}
@@ -384,7 +371,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                       }}
                     />
                   </motion.button>
-                </motion.div>
+                </div>
               )}
               </div>
             </div>
@@ -398,12 +385,13 @@ export const ChordCard: React.FC<ChordCardProps> = ({
               <motion.button
                 type="button"
                 aria-label={`Play ${chord.name}`}
+                disabled={!chord.voicing}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onPlay(chord);
+                  if (chord.voicing) onPlay(chord);
                 }}
                 className={`
-                  shrink-0 w-8 h-8 flex items-center justify-center rounded-full border
+                  shrink-0 w-8 h-8 flex items-center justify-center rounded-full border disabled:opacity-30 disabled:cursor-default
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
                   ${isDistorted
                     ? 'border-rose-900 text-rose-500 focus-visible:ring-rose-500'
@@ -425,63 +413,82 @@ export const ChordCard: React.FC<ChordCardProps> = ({
             </div>
           </div>
 
-          {/* Fretboard Data */}
-          <div className="relative z-10 w-full pt-3 border-t border-white/5 flex justify-between items-center mt-auto">
+          {/* Fretboard Data: tab and audio both come from chord.voicing.shape */}
+          <div
+            className="relative z-10 w-full pt-3 border-t border-white/5 mt-auto"
+            data-tab={chord.voicing?.tab ?? ''}
+            data-notes={chord.notes.join(' ')}
+          >
+          <div className="flex justify-between items-center gap-2 mb-2">
             <div className="flex items-center gap-2">
               <span className="font-mono text-[10px] text-neutral-400">TABLATURE</span>
-              <motion.a
-                href={buildChordExplorerUrl(chord)}
-                target="_blank"
-                rel="noopener"
-                aria-label="Open in Chord Explorer"
-                title="Open in Chord Explorer"
-                onClick={(e) => e.stopPropagation()}
-                className={`
-                  w-7 h-7 flex items-center justify-center rounded-full border border-white/10 text-neutral-500
-                  transition-colors duration-200
-                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
-                  ${isDistorted ? 'hover:text-rose-400 hover:border-rose-500/50 focus-visible:ring-rose-500' : 'hover:text-cyan-400 hover:border-cyan-500/50 focus-visible:ring-cyan-500'}
-                `}
-                whileHover={{ scale: 1.15 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                <svg
-                  className="w-3 h-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+              {explorerUrl && (
+                <motion.a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="Open in Chord Explorer"
+                  title="Open in Chord Explorer"
+                  onClick={(e) => e.stopPropagation()}
+                  className={`
+                    w-7 h-7 flex items-center justify-center rounded-full border border-white/10 text-neutral-500
+                    transition-colors duration-200
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
+                    ${isDistorted ? 'hover:text-rose-400 hover:border-rose-500/50 focus-visible:ring-rose-500' : 'hover:text-cyan-400 hover:border-cyan-500/50 focus-visible:ring-cyan-500'}
+                  `}
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: 0.9 }}
                 >
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </motion.a>
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </motion.a>
+              )}
             </div>
-            <motion.span
-              className={`font-mono text-sm tracking-[0.25em] font-bold ${
-                isDistorted
-                  ? 'text-rose-500'
-                  : 'text-cyan-500'
-              }`}
-              animate={{
-                textShadow: isHovering
-                  ? (isDistorted
-                      ? '0 0 15px rgba(225, 29, 72, 0.8)'
-                      : '0 0 15px rgba(8, 145, 178, 0.8)')
-                  : (isDistorted
-                      ? '0 0 8px rgba(225, 29, 72, 0.6)'
-                      : '0 0 8px rgba(8, 145, 178, 0.6)')
-              }}
-            >
-              {chord.fretboard}
-            </motion.span>
+            {chord.voicing && (
+              <span
+                className="font-mono text-[10px] text-neutral-300 truncate"
+                title={`Sounds as ${chord.voicing.soundsAs}: ${chord.voicing.degrees}`}
+              >
+                <span className="text-neutral-400">SOUNDS </span>{chord.voicing.soundsAs}
+              </span>
+            )}
+          </div>
+          {chord.voicing ? (
+            <>
+              <VoicingTab
+                shape={chord.voicing.shape}
+                fingers={chord.voicing.fingers}
+                degreesByString={chord.voicing.degreesByString}
+                tuning={tuning}
+                isDistorted={isDistorted}
+              />
+              {chord.voicing.relaxed && (
+                <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-amber-300/90">
+                  Closest playable: {chord.voicing.relaxed.join(', ')}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="font-mono text-[11px] leading-snug text-neutral-300" role="note">
+              <span className={isDistorted ? 'text-rose-400' : 'text-cyan-400'}>No playable shape for your hand profile here.</span>{' '}
+              {chord.unplayableReason}
+            </p>
+          )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </motion.div>
   );
 };

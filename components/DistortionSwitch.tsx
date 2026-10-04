@@ -90,9 +90,13 @@ const ChannelButton: React.FC<ChannelButtonProps> = ({
   return (
     <motion.button
       ref={buttonRef}
+      type="button"
+      aria-pressed={isActive}
       onClick={onClick}
       className={`
         relative flex-1 group flex flex-col items-center justify-center border-2 overflow-hidden
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
+        ${activeColor === 'cyan' ? 'focus-visible:ring-cyan-500' : 'focus-visible:ring-rose-500'}
         ${isActive
           ? `${colorConfig.border} ${colorConfig.bg}`
           : 'border-neutral-800 bg-neutral-900/20'

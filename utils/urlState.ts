@@ -12,13 +12,19 @@ const VIBE_PARAMS: Record<string, VibeMode> = {
   energetic: VibeMode.ENERGETIC
 };
 
+/** Top-level workbench views. 'library' is the default and never written to the URL. */
+export type AppView = 'library' | 'finder' | 'rhythm';
+
+const VIEW_PARAMS: readonly AppView[] = ['finder', 'rhythm'];
+
 export interface UrlState {
   root?: string;
   tuning?: TuningMode;
   vibe?: VibeMode;
+  view?: AppView;
 }
 
-/** Parses ?root=C&tuning=drop&vibe=dark from the current URL. Invalid values are dropped. */
+/** Parses ?root=C&tuning=drop&vibe=dark&view=finder from the current URL. Invalid values are dropped. */
 export const parseUrlState = (): UrlState => {
   if (typeof window === 'undefined') return {};
 
@@ -40,17 +46,27 @@ export const parseUrlState = (): UrlState => {
     state.vibe = VIBE_PARAMS[vibe];
   }
 
+  const view = params.get('view')?.toLowerCase();
+  if (view && (VIEW_PARAMS as readonly string[]).includes(view)) {
+    state.view = view as AppView;
+  }
+
   return state;
 };
 
-/** Writes the current selection to the query string without a navigation. */
-export const syncUrlState = (root: string, tuning: TuningMode, vibe: VibeMode): void => {
+/** Writes the current selection to the query string without a navigation. The library view omits `view`. */
+export const syncUrlState = (root: string, tuning: TuningMode, vibe: VibeMode, view: AppView = 'library'): void => {
   if (typeof window === 'undefined') return;
 
   const params = new URLSearchParams(window.location.search);
   params.set('root', root);
   params.set('tuning', tuning === TuningMode.DROP ? 'drop' : 'standard');
   params.set('vibe', vibe.toLowerCase());
+  if (view === 'library') {
+    params.delete('view');
+  } else {
+    params.set('view', view);
+  }
 
   window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
 };

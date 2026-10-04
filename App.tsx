@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { audioEngine } from './services/audioEngine';
 import { DistortionSwitch } from './components/DistortionSwitch';
@@ -10,12 +10,86 @@ import { RiffBar } from './components/RiffBar';
 import { useChordStore } from './stores/chordStore';
 import { useRiffStore, MAX_RIFF_STEPS } from './stores/riffStore';
 import { Chord, TuningMode, VibeMode } from './types';
-import { transposeChord } from './utils/musicTheory';
-import { syncUrlState } from './utils/urlState';
+import { resolveLibraryChord, tuningForMode } from './utils/libraryVoicing';
+import { handProfileHash } from './engine/handProfile';
+import { useHandProfileStore } from './stores/handProfileStore';
+import { parseUrlState, syncUrlState, type AppView } from './utils/urlState';
 import { getChords } from './constants';
 
 const CHORDS_PER_BATCH = 6;
 const RELATED_CHORDS_COUNT = 6;
+
+const loadVoicingFinder = () => import('./components/VoicingFinder');
+const loadHandProfilePanel = () => import('./components/HandProfilePanel');
+const loadRhythmLab = () => import('./components/RhythmLab');
+const VoicingFinder = lazy(() => loadVoicingFinder().then((m) => ({ default: m.VoicingFinder })));
+const HandProfilePanel = lazy(() => loadHandProfilePanel().then((m) => ({ default: m.HandProfilePanel })));
+const RhythmLab = lazy(() => loadRhythmLab().then((m) => ({ default: m.RhythmLab })));
+
+const RHYTHM_LAB_ENABLED = true;
+
+const initialView = (): AppView => {
+  const view = parseUrlState().view ?? 'library';
+  return view === 'rhythm' && !RHYTHM_LAB_ENABLED ? 'library' : view;
+};
+
+const LazyFallback: React.FC = () => (
+  <p className="py-12 text-center font-mono text-xs uppercase tracking-widest text-neutral-400">Loading...</p>
+);
+
+interface ViewSwitchProps {
+  view: AppView;
+  onChange: (view: AppView) => void;
+  isDistorted: boolean;
+  showRhythmLab: boolean;
+}
+
+const ViewSwitch: React.FC<ViewSwitchProps> = ({ view, onChange, isDistorted, showRhythmLab }) => {
+  const options: { id: AppView; label: string; prefetch?: () => void }[] = [
+    { id: 'library', label: 'LIBRARY' },
+    { id: 'finder', label: 'VOICING FINDER', prefetch: () => void loadVoicingFinder() },
+    ...(showRhythmLab ? [{ id: 'rhythm' as const, label: 'RHYTHM LAB', prefetch: () => void loadRhythmLab() }] : [])
+  ];
+
+  return (
+    <div className="w-full">
+      <div className="flex justify-between items-end mb-2 px-1">
+        <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest">
+          WORKBENCH
+        </span>
+      </div>
+      <div className={`grid ${options.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} gap-1 bg-neutral-900/50 p-1 rounded-lg border border-white/5`}>
+        {options.map((option) => {
+          const active = option.id === view;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onChange(option.id)}
+              onPointerEnter={option.prefetch}
+              onFocus={option.prefetch}
+              aria-pressed={active}
+              className={`
+                relative h-11 md:h-10 px-1 flex items-center justify-center font-['Oswald'] tracking-widest text-xs font-bold transition-all duration-200
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:z-10
+                ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
+                ${active
+                  ? (isDistorted ? 'bg-neutral-800 text-white border border-rose-900/50' : 'bg-neutral-800 text-white border border-cyan-900/50')
+                  : 'text-neutral-400 hover:text-neutral-200 border border-transparent'
+                }
+              `}
+            >
+              {option.label}
+              {active && (
+                <div className={`absolute bottom-0 w-1/3 h-0.5 ${isDistorted ? 'bg-rose-500' : 'bg-cyan-500'}`}></div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const {
@@ -53,6 +127,23 @@ const App: React.FC = () => {
 
   const relatedSectionRef = useRef<HTMLElement>(null);
   const [favoriteChords, setFavoriteChords] = useState<Chord[]>([]);
+  const storedProfile = useHandProfileStore((state) => state.profile);
+  // Cards depend only on the fretting-hand fields: a tempo change must not reload the grid
+  const voicingProfileKey = handProfileHash({ ...storedProfile, comfortableSixteenthBpm: 0 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handProfile = useMemo(() => storedProfile, [voicingProfileKey]);
+  const tuning = tuningForMode(tuningMode);
+
+  const [view, setView] = useState<AppView>(initialView);
+  const [handProfileOpen, setHandProfileOpen] = useState(false);
+  const [handProfileMounted, setHandProfileMounted] = useState(false);
+
+  const openHandProfile = useCallback(() => {
+    setHandProfileMounted(true);
+    setHandProfileOpen(true);
+  }, []);
+
+  const closeHandProfile = useCallback(() => setHandProfileOpen(false), []);
 
   const riffSteps = useRiffStore((state) => state.steps);
   const metronomeOn = useRiffStore((state) => state.metronomeOn);
@@ -74,10 +165,10 @@ const App: React.FC = () => {
     resetLockState();
   }, [tuningMode, vibeMode, resetLockState]);
 
-  // Keep the query string shareable: ?root=C&tuning=drop&vibe=dark
+  // Keep the query string shareable: ?root=C&tuning=drop&vibe=dark&view=finder
   useEffect(() => {
-    syncUrlState(selectedRoot, tuningMode, vibeMode);
-  }, [selectedRoot, tuningMode, vibeMode]);
+    syncUrlState(selectedRoot, tuningMode, vibeMode, view);
+  }, [selectedRoot, tuningMode, vibeMode, view]);
 
   const handleUserInteraction = useCallback(async () => {
     if (!isAudioReady) {
@@ -94,6 +185,8 @@ const App: React.FC = () => {
   }, [isDistorted, isAudioReady, handleUserInteraction, setIsDistorted]);
 
   const playChord = useCallback(async (chord: Chord) => {
+    // Unplayable cards have no shape, so there is nothing honest to play
+    if (!chord.voicing) return;
     await handleUserInteraction();
     audioEngine.playChord(chord.notes);
     setActiveChordId(chord.id);
@@ -118,16 +211,10 @@ const App: React.FC = () => {
     const loadFavoriteChords = async () => {
       try {
         const baseChords = await getChords(tuningMode, vibeMode);
-        const transposed = baseChords
+        const resolved = baseChords
           .filter((chord: Chord) => favorites.includes(chord.id))
-          .map((chord: Chord) => {
-            try {
-              return transposeChord(chord, selectedRoot, tuningMode);
-            } catch {
-              return chord;
-            }
-          });
-        if (!cancelled) setFavoriteChords(transposed);
+          .map((chord: Chord) => resolveLibraryChord(chord, selectedRoot, tuningMode, handProfile));
+        if (!cancelled) setFavoriteChords(resolved);
       } catch {
         if (!cancelled) setFavoriteChords([]);
       }
@@ -137,7 +224,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [showFavoritesOnly, favorites, tuningMode, vibeMode, selectedRoot]);
+  }, [showFavoritesOnly, favorites, tuningMode, vibeMode, selectedRoot, handProfile]);
 
   const handleLockToggle = useCallback(async (chord: Chord) => {
     if (lockedChordId === chord.id) {
@@ -149,16 +236,14 @@ const App: React.FC = () => {
 
       const baseChords = await getChords(tuningMode, vibeMode);
 
-      const originalParent = baseChords.find((p: Chord) => {
-        const transposed = transposeChord(p, selectedRoot, tuningMode);
-        return transposed.id === chord.id;
-      });
+      // Ids are stable across roots, so the displayed id is the base id
+      const originalParent = baseChords.find((p: Chord) => p.id === chord.id);
 
       if (originalParent && originalParent.relatedChords && originalParent.relatedChords.length > 0) {
-        const transposedRelated = originalParent.relatedChords
+        const resolvedRelated = originalParent.relatedChords
           .slice(0, RELATED_CHORDS_COUNT)
-          .map((relatedChord: Chord) => transposeChord(relatedChord, selectedRoot, tuningMode));
-        setRelatedChords(transposedRelated);
+          .map((relatedChord: Chord) => resolveLibraryChord(relatedChord, selectedRoot, tuningMode, handProfile));
+        setRelatedChords(resolvedRelated);
 
         setTimeout(() => {
           relatedSectionRef.current?.scrollIntoView({
@@ -170,7 +255,7 @@ const App: React.FC = () => {
         setRelatedChords([]);
       }
     }
-  }, [lockedChordId, playChord, selectedRoot, tuningMode, vibeMode, setLockedChordId, setRelatedChords]);
+  }, [lockedChordId, playChord, selectedRoot, tuningMode, vibeMode, handProfile, setLockedChordId, setRelatedChords]);
 
   const isChordLocked = useCallback((chord: Chord) => {
     if (!lockedChordId) return false;
@@ -181,10 +266,13 @@ const App: React.FC = () => {
     setIsLoadingChords(true);
     setDisplayedChords([]);
     setChordsToLoad(6);
+    // A quick root/tuning/vibe change must not let an older load overwrite newer cards
+    let cancelled = false;
 
     const loadChords = async () => {
       try {
         const baseChords = await getChords(tuningMode, vibeMode);
+        if (cancelled) return;
 
         if (!baseChords || baseChords.length === 0) {
           setDisplayedChords([]);
@@ -194,33 +282,22 @@ const App: React.FC = () => {
 
         setTotalChordsAvailable(baseChords.length);
 
+        // Every tab on screen comes from an engine shape, so cards render already resolved
         const firstBatch = baseChords.slice(0, CHORDS_PER_BATCH);
-        const strippedChords = firstBatch.map((chord: Chord) => ({
-          ...chord,
-          relatedChords: undefined
-        }));
-
-        setDisplayedChords(strippedChords as Chord[]);
+        setDisplayedChords(firstBatch.map((chord: Chord) => resolveLibraryChord(chord, selectedRoot, tuningMode, handProfile)));
         setIsLoadingChords(false);
-
-        setTimeout(() => {
-          const transposed = firstBatch.map((chord: Chord) => {
-            try {
-              return transposeChord(chord, selectedRoot, tuningMode);
-            } catch {
-              return chord;
-            }
-          });
-          setDisplayedChords(transposed);
-        }, 150);
       } catch {
+        if (cancelled) return;
         setDisplayedChords([]);
         setIsLoadingChords(false);
       }
     };
 
     loadChords();
-  }, [selectedRoot, tuningMode, vibeMode, setDisplayedChords, setIsLoadingChords, setChordsToLoad, setTotalChordsAvailable]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRoot, tuningMode, vibeMode, handProfile, setDisplayedChords, setIsLoadingChords, setChordsToLoad, setTotalChordsAvailable]);
 
   const loadMoreChords = useCallback(async () => {
     if (isLoadingChords) return;
@@ -241,31 +318,14 @@ const App: React.FC = () => {
         return;
       }
 
-      setDisplayedChords([...displayedChords, ...(nextBatch as Chord[])]);
+      const resolved = nextBatch.map((chord: Chord) => resolveLibraryChord(chord, selectedRoot, tuningMode, handProfile));
+      setDisplayedChords([...displayedChords, ...resolved]);
       incrementChordsToLoad(CHORDS_PER_BATCH);
-
-      setTimeout(() => {
-        const transposed = nextBatch.map((chord: Chord) => {
-          try {
-            return transposeChord(chord, selectedRoot, tuningMode);
-          } catch {
-            return chord;
-          }
-        });
-
-        const newChords = [...displayedChords];
-        const startIndex = displayedChords.length;
-        transposed.forEach((chord: Chord, i: number) => {
-          newChords[startIndex + i] = chord;
-        });
-        setDisplayedChords(newChords);
-      }, 100);
-
       setIsLoadingChords(false);
     } catch {
       setIsLoadingChords(false);
     }
-  }, [chordsToLoad, tuningMode, vibeMode, selectedRoot, isLoadingChords, displayedChords, setDisplayedChords, setIsLoadingChords, incrementChordsToLoad]);
+  }, [chordsToLoad, tuningMode, vibeMode, selectedRoot, handProfile, isLoadingChords, displayedChords, setDisplayedChords, setIsLoadingChords, incrementChordsToLoad]);
 
   const gridChords = showFavoritesOnly ? favoriteChords : displayedChords;
 
@@ -368,13 +428,39 @@ const App: React.FC = () => {
                 isDistorted={isDistorted}
               />
 
-              <VibeSelector
-                vibe={vibeMode}
-                setVibe={setVibeMode}
-                isDistorted={isDistorted}
-              />
+              {view === 'library' && (
+                <VibeSelector
+                  vibe={vibeMode}
+                  setVibe={setVibeMode}
+                  isDistorted={isDistorted}
+                />
+              )}
 
-              <div className="flex justify-end mb-4">
+              <div className="flex flex-wrap justify-end gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={openHandProfile}
+                  onPointerEnter={() => void loadHandProfilePanel()}
+                  onFocus={() => void loadHandProfilePanel()}
+                  aria-haspopup="dialog"
+                  aria-expanded={handProfileOpen}
+                  className={`
+                    relative flex items-center gap-2 px-3 h-8 rounded-full border font-mono text-[10px] uppercase tracking-widest transition-all duration-200
+                    after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-['']
+                    bg-neutral-900/50 border-white/10 text-neutral-400 hover:text-neutral-200 hover:border-white/20
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black
+                    ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}
+                  `}
+                >
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M18 11V6a2 2 0 0 0-4 0" />
+                    <path d="M14 10V4a2 2 0 0 0-4 0v2" />
+                    <path d="M10 10.5V6a2 2 0 0 0-4 0v8" />
+                    <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+                  </svg>
+                  Hand profile
+                </button>
+                {view === 'library' && (
                 <button
                   type="button"
                   onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
@@ -405,6 +491,7 @@ const App: React.FC = () => {
                   </svg>
                   Favorites{favorites.length > 0 ? ` (${favorites.length})` : ''}
                 </button>
+                )}
               </div>
 
               <RootSelector
@@ -412,9 +499,34 @@ const App: React.FC = () => {
                   onSelectRoot={setSelectedRoot}
                   isDistorted={isDistorted}
               />
+
+              <ViewSwitch
+                view={view}
+                onChange={setView}
+                isDistorted={isDistorted}
+                showRhythmLab={RHYTHM_LAB_ENABLED}
+              />
           </section>
         </div>
 
+        {view === 'finder' && (
+          <main>
+            <Suspense fallback={<LazyFallback />}>
+              <VoicingFinder onOpenHandProfile={openHandProfile} handProfileOpen={handProfileOpen} />
+            </Suspense>
+          </main>
+        )}
+
+        {view === 'rhythm' && RHYTHM_LAB_ENABLED && (
+          <main className="pb-20">
+            <Suspense fallback={<LazyFallback />}>
+              <RhythmLab />
+            </Suspense>
+          </main>
+        )}
+
+        {view === 'library' && (
+        <>
         <main className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-20" style={{ isolation: 'isolate' }}>
           {showFavoritesOnly && gridChords.length === 0 ? (
             <motion.div
@@ -441,6 +553,7 @@ const App: React.FC = () => {
                   >
                     <ChordCard
                       chord={chord}
+                      tuning={tuning}
                       isDistorted={isDistorted}
                       onPlay={handleChordClick}
                       onLockToggle={handleLockToggle}
@@ -543,7 +656,7 @@ const App: React.FC = () => {
 
                         <div className={`w-px h-6 ${isDistorted ? 'bg-rose-500/40' : 'bg-cyan-500/40'}`} />
 
-                        <span className="font-['Oswald'] text-lg text-neutral-200 uppercase tracking-wide">
+                        <span className="font-['Oswald'] text-lg text-neutral-200 tracking-wide">
                           {lockedChord.name}
                         </span>
 
@@ -573,6 +686,7 @@ const App: React.FC = () => {
                   >
                     <ChordCard
                       chord={chord}
+                      tuning={tuning}
                       isDistorted={isDistorted}
                       onPlay={handleChordClick}
                       onAddToRiff={handleAddToRiff}
@@ -587,6 +701,8 @@ const App: React.FC = () => {
             </motion.section>
           )}
         </AnimatePresence>
+        </>
+        )}
 
         <motion.footer
           className="mt-auto pt-12 border-t border-neutral-900 text-center"
@@ -605,6 +721,18 @@ const App: React.FC = () => {
       </div>
 
       <RiffBar />
+
+      {handProfileMounted && (
+        <Suspense
+          fallback={
+            <p className="fixed bottom-6 right-6 z-[70] px-3 py-2 rounded-full border border-white/10 bg-black/80 font-mono text-[10px] uppercase tracking-widest text-neutral-400">
+              Loading...
+            </p>
+          }
+        >
+          <HandProfilePanel open={handProfileOpen} onClose={closeHandProfile} />
+        </Suspense>
+      )}
     </motion.div>
   );
 };

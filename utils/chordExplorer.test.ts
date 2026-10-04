@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRoot, mapToExplorerType, buildChordExplorerUrl } from './chordExplorer';
+import { parseRoot, mapToExplorerType, buildChordExplorerUrl, buildExplorerUrl, explorerTypeForIntervals, shapeToGvParam } from './chordExplorer';
 
 describe('parseRoot', () => {
   it('extracts natural and sharp roots from the name', () => {
@@ -87,8 +87,49 @@ describe('buildChordExplorerUrl', () => {
       .toBe('https://chords.thegridbase.com/?root=C%23&type=m7');
   });
 
-  it('encodes sharps for major chords too (F#5)', () => {
+  it('encodes sharps for major chords too, with the case-sensitive Major id (F#5)', () => {
     expect(buildChordExplorerUrl({ name: 'F#5', subtext: 'F#5' }))
-      .toBe('https://chords.thegridbase.com/?root=F%23&type=major');
+      .toBe('https://chords.thegridbase.com/?root=F%23&type=Major');
+  });
+
+  it('appends the exact shape as gv, low -> high with x for muted', () => {
+    expect(buildChordExplorerUrl({ name: 'E', subtext: 'E5' }, [0, 2, 2, null, null, null]))
+      .toBe('https://chords.thegridbase.com/?root=E&type=Major&gv=0-2-2-x-x-x');
+    expect(shapeToGvParam([null, 13, 15, null, 10, 0])).toBe('x-13-15-x-10-0');
+  });
+});
+
+describe('parseRoot fallback', () => {
+  it('rejects ordinary words that only start with a note letter', () => {
+    expect(parseRoot('Drop Ghost', 'm2 Clash')).toBe('E');
+    expect(parseRoot('Diminished Phrygian', 'Dim/b2')).toBe('E');
+  });
+
+  it('reads flat roots and returns sharps', () => {
+    expect(parseRoot('Bb(VI)', '')).toBe('A#');
+    expect(parseRoot('Ebm7', '')).toBe('D#');
+  });
+});
+
+describe('buildExplorerUrl', () => {
+  it('keeps links for sounds Chord Explorer has a type for', () => {
+    expect(buildExplorerUrl({ root: 'E', type: 'major' })).toBe('https://chords.thegridbase.com/?root=E&type=Major');
+    expect(buildExplorerUrl({ root: 'A', type: 'minor' }, [null, 0, 2, 2, 1, 0])).toBe(
+      'https://chords.thegridbase.com/?root=A&type=minor&gv=x-0-2-2-1-0'
+    );
+    expect(buildExplorerUrl({ root: 'C#', type: 'm7' })).toBe('https://chords.thegridbase.com/?root=C%23&type=m7');
+  });
+
+  it('builds no link without a type, so Chord Explorer never shows E5 as its default minor', () => {
+    expect(buildExplorerUrl({ root: 'E' }, [0, 2, 2, null, null, null])).toBeNull();
+    expect(buildExplorerUrl({ root: 'E', type: undefined })).toBeNull();
+  });
+
+  it('types power chords, dyads, quartal stacks and clusters as nothing', () => {
+    expect(explorerTypeForIntervals([0, 7, 0])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 1])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 5, 10])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 1, 2])).toBeUndefined();
+    expect(explorerTypeForIntervals([0, 3, 7, 0])).toBe('minor');
   });
 });

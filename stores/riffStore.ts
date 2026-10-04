@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { midiToName, parseNoteName } from '../engine/pitch';
 
 export const RIFF_STORAGE_KEY = 'riffforge:riff:v1';
 export const MAX_RIFF_STEPS = 16;
@@ -41,6 +42,16 @@ const isValidStep = (value: unknown): value is Omit<RiffStep, 'key'> & { key?: s
   );
 };
 
+/**
+ * Older library cards stored curated spellings such as "Bb2", which the MIDI writer rejects. Respell
+ * with sharps and drop anything unreadable so a stored v1 riff still plays and exports.
+ */
+const normalizeNotes = (notes: readonly string[]): string[] =>
+  notes.flatMap((note) => {
+    const midi = parseNoteName(note);
+    return midi === null ? [] : [midiToName(midi)];
+  });
+
 const loadRiff = (): PersistedRiff => {
   const fallback: PersistedRiff = { steps: [], bpm: DEFAULT_BPM };
   try {
@@ -59,7 +70,7 @@ const loadRiff = (): PersistedRiff => {
             baseId: step.baseId,
             name: step.name,
             subtext: step.subtext,
-            notes: [...step.notes]
+            notes: normalizeNotes(step.notes)
           }))
       : [];
 
