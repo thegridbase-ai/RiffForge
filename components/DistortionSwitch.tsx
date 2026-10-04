@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import type { AmpModel } from '../utils/ampTone';
 
 interface DistortionSwitchProps {
   isDistorted: boolean;
@@ -194,5 +195,50 @@ const ChannelButton: React.FC<ChannelButtonProps> = ({
         />
       )}
     </motion.button>
+  );
+};
+
+interface AmpModelSwitchProps {
+  model: AmpModel;
+  isDistorted: boolean;
+  onChange: (model: AmpModel) => void;
+}
+
+const AMP_OPTIONS: { value: AmpModel; label: string; title: string }[] = [
+  { value: 'classic', label: 'Classic', title: 'The original synth and distortion' },
+  { value: 'modern', label: 'New', title: 'Two-stage preamp, tone stack and cabinet, with palm-mute and dead-note articulation' }
+];
+
+/** A/B between the classic synth chain and the New amp chain; applies to every sound in the app. */
+export const AmpModelSwitch: React.FC<AmpModelSwitchProps> = ({ model, isDistorted, onChange }) => {
+  const active = isDistorted
+    ? 'bg-rose-500/20 border-rose-500/60 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.25)]'
+    : 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.25)]';
+  const ring = isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500';
+  return (
+    <div role="group" aria-label="Amp model" className="flex items-center gap-2">
+      <span className="text-[10px] font-mono text-neutral-400 uppercase" aria-hidden="true">
+        Amp
+      </span>
+      <div className="flex gap-1 rounded-full border border-white/10 bg-neutral-900/60 p-0.5">
+        {AMP_OPTIONS.map((option) => {
+          const pressed = option.value === model;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={pressed}
+              title={option.title}
+              onClick={() => onChange(option.value)}
+              className={`min-h-[44px] md:min-h-0 md:h-6 px-3 rounded-full border font-mono text-[10px] uppercase tracking-widest transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 ${ring} ${
+                pressed ? active : 'border-transparent text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 };

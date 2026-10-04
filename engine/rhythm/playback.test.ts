@@ -33,7 +33,7 @@ const PATTERN: RhythmPattern = {
   params: { ...defaultRhythmParams('chugEngine'), bars: 1 },
   events: [
     ev(0, 240, { kind: 'slot', slot: 0 }, { accent: 2 }),
-    ev(240, 120, { kind: 'pedal' }, { palmMute: true }),
+    ev(240, 120, { kind: 'pedal' }, { palmMute: true, pick: 'up' }),
     ev(360, 120, { kind: 'dead' }),
     ev(480, 240, { kind: 'slot', slot: 1 }, { accent: 1 }),
     ev(720, 240, { kind: 'slot', slot: 1 }, { tie: true }),
@@ -86,10 +86,11 @@ describe('rhythmToPlaybackEvents', () => {
     expect(out[6].durationSec).toBeCloseTo(0.5, 9);
   });
 
-  it('reports kind, palm mute and accent for the UI', () => {
+  it('reports kind, palm mute, accent and pick direction for the UI and the strum', () => {
     expect(out.map((e) => e.kind)).toEqual(['slot', 'pedal', 'dead', 'slot', 'pedal', 'dyad', 'pedal']);
     expect(out[1].palmMute).toBe(true);
     expect(out[3].accent).toBe(1);
+    expect(out.slice(0, 3).map((e) => e.pick)).toEqual(['down', 'up', 'down']);
   });
 
   it('skips slots whose shape does not fit the tuning and returns nothing for a bad bpm', () => {

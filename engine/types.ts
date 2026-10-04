@@ -493,6 +493,8 @@ export interface PlaybackEvent {
   kind: HitTarget['kind'];
   palmMute: boolean;
   accent: 0 | 1 | 2;
+  /** Pick direction of the hit (strum order: down = low string first). */
+  pick: 'down' | 'up';
 }
 
 export interface MidiNoteEvent {

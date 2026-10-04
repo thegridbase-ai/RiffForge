@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { audioEngine } from './services/audioEngine';
-import { DistortionSwitch } from './components/DistortionSwitch';
+import { AmpModelSwitch, DistortionSwitch } from './components/DistortionSwitch';
 import { ChordCard } from './components/ChordCard';
 import { RootSelector } from './components/RootSelector';
 import { TuningSelector } from './components/TuningSelector';
@@ -94,6 +94,8 @@ const ViewSwitch: React.FC<ViewSwitchProps> = ({ view, onChange, isDistorted, sh
 const App: React.FC = () => {
   const {
     isDistorted,
+    ampModel,
+    setAmpModel,
     isAudioReady,
     activeChordId,
     selectedRoot,
@@ -178,6 +180,11 @@ const App: React.FC = () => {
       setIsAudioReady(true);
     }
   }, [isAudioReady, setIsAudioReady]);
+
+  // The engine reads the model on every note, so a switch is heard on the next hit (also mid-loop)
+  useEffect(() => {
+    audioEngine.setAmpModel(ampModel);
+  }, [ampModel]);
 
   const setDistortionMode = useCallback(async (shouldBeDistorted: boolean) => {
     if (isDistorted === shouldBeDistorted && isAudioReady) return;
@@ -407,11 +414,12 @@ const App: React.FC = () => {
           <section className="mb-12 sticky top-4 z-50 backdrop-blur-md bg-black/40 p-4 rounded-xl border border-white/5 shadow-2xl">
             <DistortionSwitch isDistorted={isDistorted} onChange={setDistortionMode} />
 
-            <div className="flex justify-between items-center mt-4 px-2 md:px-4 max-w-lg mx-auto">
+            <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 mt-4 px-2 md:px-4 max-w-lg mx-auto">
               <div className="flex items-center gap-2">
                 <div className={`w-1.5 h-1.5 rounded-full ${isAudioReady ? 'bg-green-500 shadow-[0_0_5px_lime]' : 'bg-red-900'}`}></div>
                 <span className="text-[10px] font-mono text-neutral-400 uppercase">Engine {isAudioReady ? 'Online' : 'Standby'}</span>
               </div>
+              <AmpModelSwitch model={ampModel} isDistorted={isDistorted} onChange={setAmpModel} />
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono text-neutral-400 uppercase">Output</span>
                 <div className="flex gap-0.5">

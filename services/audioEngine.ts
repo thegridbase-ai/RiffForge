@@ -1,6 +1,17 @@
 import * as Tone from 'tone';
 import type { PlaybackEvent } from '../engine/types';
 import { midiToName } from '../engine/pitch';
+import { PALM_MUTE_DURATION_FACTOR } from '../engine/rhythm/playback';
+import { createModernAmp, createModernVoices, type ModernAmp, type ModernVoices } from './ampChain';
+import {
+  DEFAULT_AMP_MODEL,
+  chordDriveTrimDb,
+  detunedFrequency,
+  humanize,
+  strumOrder,
+  strumVelocity,
+  type AmpModel
+} from '../utils/ampTone';
 
 export interface SequenceStep {
   notes: string[];
@@ -27,6 +38,9 @@ export interface PlayRhythmOptions {
 
 /** Per-string strum spread for rhythm hits; kept tight so chugs stay on the grid. */
 const RHYTHM_STRUM_SEC = 0.006;
+/** New model: strum spread for a played chord, and the lead time that keeps humanized starts in the future. */
+const CHORD_STRUM_SEC = 0.018;
+const STRUM_LEAD_SEC = 0.005;
 
 class AudioEngine {
   private synth: Tone.PolySynth | null = null;
@@ -43,6 +57,11 @@ class AudioEngine {
   private rhythmOffsetSeconds = 0;
   private rhythmMetronome = false;
   private rhythmStopListeners = new Set<() => void>();
+  private ampModel: AmpModel = DEFAULT_AMP_MODEL;
+  private distorted = false;
+  private modernAmp: ModernAmp | null = null;
+  private modernVoices: ModernVoices | null = null;
+  private strumCount = 0;
 
   constructor() {
     // Lazy initialization
@@ -111,10 +130,49 @@ class AudioEngine {
     }).connect(this.distortion);
     this.rhythmSynth.maxPolyphony = 48;
 
+    // 7. New amp model, side by side with the classic chain (only one of them gets notes)
+    this.modernAmp = createModernAmp(this.limiter);
+    this.modernVoices = createModernVoices(this.modernAmp);
+    this.modernAmp.setChannel(this.distorted);
+
     this.initialized = true;
   }
 
+  /** Classic (the original synth + distortion) or the New amp chain. Works before init. */
+  public setAmpModel(model: AmpModel) {
+    if (model === this.ampModel) return;
+    this.ampModel = model;
+    // Let the other model's notes stop instead of ringing on under the new one
+    this.synth?.releaseAll();
+    this.rhythmSynth?.releaseAll();
+    this.modernVoices?.releaseAll();
+  }
+
+  public getAmpModel(): AmpModel {
+    return this.ampModel;
+  }
+
+  private modern(): { amp: ModernAmp; voices: ModernVoices } | null {
+    return this.ampModel === 'modern' && this.modernAmp && this.modernVoices ? { amp: this.modernAmp, voices: this.modernVoices } : null;
+  }
+
+  /** New model: one hit, strings in pick order with repeatable humanize, drive trimmed for the chord. */
+  private strumModern(
+    voice: Tone.PolySynth<Tone.MonoSynth>,
+    amp: ModernAmp,
+    midi: readonly number[],
+    opts: { time: number; duration: Tone.Unit.Time; velocity: number; spread: number; hit: number; pick: 'down' | 'up' }
+  ) {
+    amp.setDriveTrim(chordDriveTrimDb(midi), opts.time);
+    strumOrder(midi, opts.pick).forEach((note, i) => {
+      const h = humanize(opts.hit, i);
+      voice.triggerAttackRelease(detunedFrequency(note, h.cents), opts.duration, opts.time + i * opts.spread + h.seconds, opts.velocity);
+    });
+  }
+
   public setDistortion(isDistorted: boolean) {
+    this.distorted = isDistorted;
+    this.modernAmp?.setChannel(isDistorted);
     if (!this.synth || !this.distortion) return;
 
     if (isDistorted) {
@@ -141,6 +199,21 @@ class AudioEngine {
   }
 
   public playChord(notes: string[]) {
+    const modern = this.modern();
+    if (modern) {
+      modern.voices.chord.releaseAll();
+      const midi = notes.map((note) => Tone.Frequency(note).toMidi());
+      const hit = this.strumCount++;
+      this.strumModern(modern.voices.chord, modern.amp, midi, {
+        time: Tone.now() + STRUM_LEAD_SEC,
+        duration: '2n',
+        velocity: strumVelocity(hit),
+        spread: CHORD_STRUM_SEC,
+        hit,
+        pick: 'down'
+      });
+      return;
+    }
     if (!this.synth) return;
     
     // Slight randomization of velocity for "human" feel
@@ -158,6 +231,7 @@ class AudioEngine {
 
   public stop() {
     this.synth?.releaseAll();
+    this.modernVoices?.chord.releaseAll();
   }
 
   public setMetronomeEnabled(enabled: boolean) {
@@ -195,7 +269,22 @@ class AudioEngine {
         );
       }
 
-      if (steps.length > 0 && this.synth) {
+      const modern = this.modern();
+      if (steps.length > 0 && modern) {
+        const index = beat % steps.length;
+        modern.voices.chord.releaseAll(time);
+        this.strumModern(modern.voices.chord, modern.amp, steps[index].notes.map((note) => Tone.Frequency(note).toMidi()), {
+          time,
+          duration: '8n',
+          velocity: 0.85,
+          spread: 0.015,
+          hit: beat,
+          pick: 'down'
+        });
+        if (onStep) {
+          Tone.getDraw().schedule(() => onStep(index), time);
+        }
+      } else if (steps.length > 0 && this.synth) {
         const index = beat % steps.length;
         this.synth.releaseAll(time);
         steps[index].notes.forEach((note, i) => {
@@ -225,6 +314,7 @@ class AudioEngine {
     transport.cancel();
     Tone.getDraw().cancel();
     this.synth?.releaseAll();
+    this.modernVoices?.chord.releaseAll();
   }
 
   public isSequencePlaying() {
@@ -265,6 +355,12 @@ class AudioEngine {
     const notePart = new Tone.Part<{ time: number; index: number }>((time, value) => {
       const event = events[value.index];
       if (!event || event.midi.length === 0) return;
+      const modern = this.modern();
+      if (modern) {
+        this.playModernHit(modern, event, value.index, time);
+        if (opts.onEvent) draw.schedule(() => opts.onEvent?.(value.index), time);
+        return;
+      }
       const notes = event.midi.map(midiToName);
       const duration = Math.max(0.01, event.durationSec);
       const spread = event.kind === 'dead' ? 0.002 : RHYTHM_STRUM_SEC;
@@ -324,6 +420,23 @@ class AudioEngine {
     };
   }
 
+  /** New model rhythm hit: dead notes are a noise click, palm mutes ring the whole step through the mute voice. */
+  private playModernHit(modern: { amp: ModernAmp; voices: ModernVoices }, event: PlaybackEvent, index: number, time: number) {
+    if (event.kind === 'dead') {
+      modern.voices.dead.triggerAttackRelease(0.02, time, event.velocity);
+      return;
+    }
+    const duration = Math.max(0.01, event.palmMute ? event.durationSec / PALM_MUTE_DURATION_FACTOR : event.durationSec);
+    this.strumModern(event.palmMute ? modern.voices.mute : modern.voices.open, modern.amp, event.midi, {
+      time,
+      duration,
+      velocity: event.velocity,
+      spread: RHYTHM_STRUM_SEC,
+      hit: index,
+      pick: event.pick
+    });
+  }
+
   private teardownRhythm() {
     if (this.rhythmParts.length === 0) return;
     for (const part of this.rhythmParts) {
@@ -338,6 +451,8 @@ class AudioEngine {
     transport.cancel();
     Tone.getDraw().cancel();
     this.rhythmSynth?.releaseAll();
+    this.modernVoices?.open.releaseAll();
+    this.modernVoices?.mute.releaseAll();
   }
 }
 

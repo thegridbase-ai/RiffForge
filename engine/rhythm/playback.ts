@@ -126,7 +126,8 @@ export const rhythmToPlaybackEvents = (
       durationSec,
       kind: event.target.kind,
       palmMute: event.palmMute,
-      accent: event.accent
+      accent: event.accent,
+      pick: event.pick
     };
   });
 };

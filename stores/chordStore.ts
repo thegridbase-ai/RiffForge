@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Chord, TuningMode, VibeMode } from '../types';
 import { parseUrlState } from '../utils/urlState';
+import { AMP_STORAGE_KEY, DEFAULT_AMP_MODEL, parseAmpModel, type AmpModel } from '../utils/ampTone';
 
 const urlState = parseUrlState();
 
@@ -27,9 +28,27 @@ const saveFavorites = (favorites: string[]): void => {
   }
 };
 
+const loadAmpModel = (): AmpModel => {
+  try {
+    return parseAmpModel(localStorage.getItem(AMP_STORAGE_KEY));
+  } catch {
+    return DEFAULT_AMP_MODEL;
+  }
+};
+
+const saveAmpModel = (model: AmpModel): void => {
+  try {
+    localStorage.setItem(AMP_STORAGE_KEY, model);
+  } catch {
+    // Storage unavailable — the choice lasts for this session only
+  }
+};
+
 interface ChordStore {
   // Audio state
   isDistorted: boolean;
+  /** Classic synth chain or the New amp chain (A/B). */
+  ampModel: AmpModel;
   isAudioReady: boolean;
   activeChordId: string | null;
 
@@ -54,6 +73,7 @@ interface ChordStore {
 
   // Actions
   setIsDistorted: (value: boolean) => void;
+  setAmpModel: (model: AmpModel) => void;
   setIsAudioReady: (value: boolean) => void;
   setActiveChordId: (id: string | null) => void;
   setSelectedRoot: (root: string) => void;
@@ -76,6 +96,7 @@ interface ChordStore {
 export const useChordStore = create<ChordStore>((set) => ({
   // Initial state
   isDistorted: false,
+  ampModel: loadAmpModel(),
   isAudioReady: false,
   activeChordId: null,
   selectedRoot: urlState.root ?? 'E',
@@ -92,6 +113,11 @@ export const useChordStore = create<ChordStore>((set) => ({
 
   // Actions
   setIsDistorted: (value) => set({ isDistorted: value }),
+  setAmpModel: (model) => {
+    const ampModel = parseAmpModel(model);
+    saveAmpModel(ampModel);
+    set({ ampModel });
+  },
   setIsAudioReady: (value) => set({ isAudioReady: value }),
   setActiveChordId: (id) => set({ activeChordId: id }),
   setSelectedRoot: (root) => set({ selectedRoot: root }),

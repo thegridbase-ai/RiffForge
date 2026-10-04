@@ -21,7 +21,7 @@ Context-aware sonic prototyping tool for metal guitarists. Lets users explore ch
 /                       # Root is the source root (@ alias -> .)
   App.tsx               # Main app component (all UI orchestration)
   index.tsx             # Entry point (with ErrorBoundary, debug logging)
-  index.css             # Tailwind + custom scrollbar + glitch/scanline effects
+  index.css             # Tailwind + custom scrollbar + scanline effects
   types.ts              # Chord, AppMode, TuningMode, VibeMode, AudioState
   constants.ts          # NOTES array, chord fetching/caching (getChords, CHORD_LIBRARY)
   components/
@@ -54,12 +54,15 @@ Context-aware sonic prototyping tool for metal guitarists. Lets users explore ch
 - `isDistorted` boolean controls the entire UI theme: cyan (clean) vs rose (distorted)
 - AudioEngine toggles oscillator type: triangle (clean) vs sawtooth (distorted)
 - Background gradients, borders, glows, text colors all branch on this flag
-- Distortion mode adds glitch CSS animation to the main container
+- No motion on the main container in distortion mode (the old glitch shake was removed for readability)
 
 ### Audio Engine
 - Lazy init: Tone.js context starts on first user interaction (browser autoplay policy)
-- Signal chain: PolySynth -> Distortion (wet/dry) -> Reverb (decay:4, wet:0.3) -> Limiter(-1dB)
-- Strum effect: notes triggered with 30ms delay between each
+- Two amp models, A/B from the header ("Amp: Classic / New", `ampModel` in chordStore, `riffforge:amp:v1`):
+  - Classic: PolySynth -> Distortion (wet/dry) -> Reverb (decay:4, wet:0.3) -> Limiter(-1dB), 30 ms strum
+  - New (default, `services/ampChain.ts`): pre-EQ -> two waveshaper gain stages -> tone stack -> power stage ->
+    cab filter -> small room -> Limiter. Palm-mute / open / chord voices, noise dead notes, chord-aware drive and
+    seeded humanize (`utils/ampTone.ts`). Output levels are matched to Classic within ~1 dB RMS (offline render).
 - Singleton export: `audioEngine` instance
 
 ### Lock & Related Chords
@@ -72,7 +75,7 @@ Context-aware sonic prototyping tool for metal guitarists. Lets users explore ch
 
 - **Fonts:** Oswald (headings), Share Tech Mono (labels/mono), Roboto Condensed (body)
 - **Colors:** cyan-500/rose-500 as accent pair, neutral-900/950 backgrounds, white/5 borders
-- **Effects:** Cursor-following radial glow on cards, CRT scanline overlay, noise texture overlay, glitch animation in distortion mode
+- **Effects:** Cursor-following radial glow on cards, CRT scanline overlay, noise texture overlay
 - **Theme:** Brutalist/industrial guitar amp aesthetic. Dark mode only.
 
 ## Known Gotchas
