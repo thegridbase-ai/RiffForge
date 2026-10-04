@@ -35,7 +35,7 @@ export const VoicingTab: React.FC<VoicingTabProps> = ({ shape, fingers, degreesB
   const accent = isDistorted ? 'text-rose-500' : 'text-cyan-500';
   const glow = isDistorted ? '0 0 8px rgba(225, 29, 72, 0.6)' : '0 0 8px rgba(8, 145, 178, 0.6)';
   const cell = compact ? 'w-6' : 'w-7';
-  const rowLabel = 'w-10 shrink-0 text-left font-mono text-[9px] uppercase tracking-widest text-neutral-400';
+  const rowLabel = 'w-11 shrink-0 text-left font-mono text-[11px] uppercase tracking-wider text-neutral-400';
 
   return (
     <div>
@@ -44,7 +44,7 @@ export const VoicingTab: React.FC<VoicingTabProps> = ({ shape, fingers, degreesB
         <div className="flex items-center">
           <span className={rowLabel}>Str</span>
           {shape.map((_, s) => (
-            <span key={s} className={`${cell} text-center text-[10px] text-neutral-400`}>
+            <span key={s} className={`${cell} text-center text-[11px] text-neutral-400`}>
               {pitchClassName(tuning.openMidi[s])}
             </span>
           ))}
@@ -54,7 +54,7 @@ export const VoicingTab: React.FC<VoicingTabProps> = ({ shape, fingers, degreesB
           {shape.map((fret, s) => (
             <span
               key={s}
-              className={`${cell} text-center font-bold ${compact ? 'text-sm' : 'text-base'} ${fret === null ? 'text-neutral-500' : accent}`}
+              className={`${cell} text-center font-bold ${compact ? 'text-sm' : 'text-base'} ${fret === null ? 'text-neutral-400' : accent}`}
               style={fret === null ? undefined : { textShadow: glow }}
             >
               {fret === null ? 'x' : fret}
@@ -72,7 +72,7 @@ export const VoicingTab: React.FC<VoicingTabProps> = ({ shape, fingers, degreesB
         <div className="flex items-center">
           <span className={rowLabel}>Deg</span>
           {degreesByString.map((degree, s) => (
-            <span key={s} className={`${cell} text-center text-[10px] text-neutral-400`}>
+            <span key={s} className={`${cell} text-center text-[11px] text-neutral-400`}>
               {degree ?? ''}
             </span>
           ))}
