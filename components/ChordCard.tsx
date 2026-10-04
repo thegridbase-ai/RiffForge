@@ -106,9 +106,9 @@ export const ChordCard: React.FC<ChordCardProps> = ({
         }}
       />
 
-      {/* Main Card */}
-      <motion.div
-        className="relative overflow-hidden p-6 text-left transition-all duration-300 group w-full h-full flex flex-col justify-between rounded-lg"
+      {/* Main Card: CSS press feedback; Framer's whileTap would make this wrapper a tab stop */}
+      <div
+        className="relative overflow-hidden p-6 text-left transition-all duration-300 group w-full h-full flex flex-col justify-between rounded-lg active:scale-[0.98] motion-reduce:active:scale-100"
         style={{
           pointerEvents: 'auto',
           ...(isLocked
@@ -133,16 +133,6 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                   background: 'rgba(0, 0, 0, 0.15)'
                 }
           )
-        }}
-        whileTap={{ scale: 0.98 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-        onClick={(e) => {
-          const target = e.target as HTMLElement;
-          if (target.closest('button[aria-label="Lock as main chord"]')) {
-            e.stopPropagation();
-            e.preventDefault();
-            return;
-          }
         }}
       >
         {/* Border Glow on Hover */}
@@ -301,28 +291,14 @@ export const ChordCard: React.FC<ChordCardProps> = ({
 
               {/* Lock Button - Animated */}
               {onLockToggle && (
-                <motion.div
-                  className="relative shrink-0"
-                  style={{ pointerEvents: 'auto', zIndex: 10 }}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    e.nativeEvent.stopImmediatePropagation();
-                    if (onLockToggle) onLockToggle(chord);
-                  }}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                  }}
-                >
+                <div className="relative shrink-0" style={{ pointerEvents: 'auto', zIndex: 10 }}>
                   <motion.button
                     type="button"
-                    className={`relative w-10 h-10 rounded-full flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}`}
+                    className={`relative w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-transform duration-150 hover:scale-110 active:scale-90 motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500'}`}
                     data-locked={isLocked ? 'true' : 'false'}
-                    title={isLocked ? "Unlock chord" : "Lock chord"}
-                    aria-label={isLocked ? "Unlock chord" : "Lock chord"}
+                    title="Lock chord and show related variations"
+                    aria-label={`Lock ${chord.name}`}
+                    aria-pressed={isLocked}
                     style={{
                       pointerEvents: 'auto',
                       position: 'relative',
@@ -346,8 +322,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                     transition={{ duration: 2, repeat: isLocked ? Infinity : 0 }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      e.preventDefault();
-                      if (onLockToggle) onLockToggle(chord);
+                      onLockToggle(chord);
                     }}
                   >
                     {/* Lock Icon SVG */}
@@ -389,7 +364,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
                       }}
                     />
                   </motion.button>
-                </motion.div>
+                </div>
               )}
               </div>
             </div>
@@ -509,7 +484,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
           )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </motion.div>
   );
 };
