@@ -478,7 +478,7 @@ export const ChordCard: React.FC<ChordCardProps> = ({
             </>
           ) : (
             <p className="font-mono text-[11px] leading-snug text-neutral-300" role="note">
-              <span className={isDistorted ? 'text-rose-400' : 'text-cyan-400'}>No playable shape for your hand here.</span>{' '}
+              <span className={isDistorted ? 'text-rose-400' : 'text-cyan-400'}>No playable shape for your hand profile here.</span>{' '}
               {chord.unplayableReason}
             </p>
           )}
