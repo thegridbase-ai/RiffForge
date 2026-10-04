@@ -3,8 +3,6 @@ import {
   FINDER_GENERATE_LIMIT,
   createLruCache,
   explainVoicing,
-  explorerChordFor,
-  explorerTypeForFamily,
   filterVoicings,
   finderCacheKey,
   finderExplorerUrl,
@@ -16,10 +14,10 @@ import {
   voicingTagLabels,
   type FinderQuery
 } from './finder';
-import { mapToExplorerType } from './chordExplorer';
+import { explorerTypeForFamily } from './chordExplorer';
 import { DEFAULT_CALIBRATION, DEFAULT_HAND_PROFILE, profileFromCalibration } from '../engine/handProfile';
 import { DROP_D, E_STANDARD } from '../engine/tuning';
-import { ALL_FAMILIES, getFamily } from '../engine/voicingSpec';
+import { getFamily } from '../engine/voicingSpec';
 import { toRiffForgeTab } from '../engine/shape';
 import type { GeneratedVoicing, VoicingTag } from '../engine/types';
 
@@ -158,21 +156,21 @@ describe('display helpers', () => {
 });
 
 describe('Chord Explorer mapping', () => {
-  it('maps every family to a type that survives the URL builder', () => {
-    for (const family of ALL_FAMILIES) {
-      const chord = explorerChordFor('F#', family.id);
-      expect(mapToExplorerType(chord.name, chord.subtext)).toBe(explorerTypeForFamily(family.id));
+  it('maps families to Chord Explorer types and omits the type where Chord Explorer has none', () => {
+    expect(explorerTypeForFamily('m_add9')).toBe('minor');
+    expect(explorerTypeForFamily('sus2')).toBe('sus2');
+    expect(explorerTypeForFamily('m7')).toBe('m7');
+    expect(explorerTypeForFamily('drone_sus2')).toBe('sus2');
+    for (const id of ['power5', 'power5_b2', 'dyad_b2', 'tritone', 'fourth', 'quartal', 'cluster_m2', 'cluster_b3', 'drone_power5']) {
+      expect(explorerTypeForFamily(id)).toBeUndefined();
     }
   });
 
-  it('picks the closest Chord Explorer type', () => {
-    expect(explorerTypeForFamily('power5')).toBe('major');
-    expect(explorerTypeForFamily('m_add9')).toBe('minor');
-    expect(explorerTypeForFamily('sus2')).toBe('sus2');
-    expect(explorerTypeForFamily('fourth')).toBe('sus4');
-    expect(explorerTypeForFamily('tritone')).toBe('dim');
-    expect(explorerTypeForFamily('drone_quartal')).toBe('sus4');
-    expect(explorerTypeForFamily('m7')).toBe('m7');
+  it('builds power chord links without a type', () => {
+    const power = findVoicings(query({ tuning: E_STANDARD, familyId: 'power5' })).voicings[0];
+    const url = finderExplorerUrl('E', 'power5', power, E_STANDARD);
+    expect(url).toMatch(/^https:\/\/chords\.thegridbase\.com\/\?root=E&gv=/);
+    expect(url).not.toContain('type=');
   });
 
   it('sends the shape only in E Standard', () => {

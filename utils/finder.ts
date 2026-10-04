@@ -13,7 +13,7 @@ import type {
 import { generateVoicings } from '../engine/generateVoicings';
 import { STRETCH_TOLERANCE_ALLOW, handProfileHash } from '../engine/handProfile';
 import { explainCost } from '../engine/playability';
-import { buildChordExplorerUrl, type ChordExplorerType } from './chordExplorer';
+import { buildExplorerUrl, explorerTypeForFamily } from './chordExplorer';
 
 export const FINDER_DEFAULT_FAMILY = 'power5';
 export const FINDER_GENERATE_LIMIT = 48;
@@ -147,58 +147,12 @@ export const noveltyPercent = (novelty: number): number => Math.round(Math.min(1
 // ---------------------------------------------------------------------------
 
 /**
- * Closest Chord Explorer type per base family (CE only knows triads, 7ths and sus chords). Dyads and power chords
- * land on the triad that contains their notes; the fourth and quartal stacks on sus4; the b3 cluster on minor.
+ * Chord Explorer deep link for a finder result: the selected root, the family's Chord Explorer type when it has
+ * one (no type for power chords, dyads, the tritone, fourths, quartal stacks and clusters, which Chord Explorer
+ * cannot show), and the exact shape only in E Standard, the only tuning Chord Explorer knows.
  */
-const EXPLORER_TYPE_BY_FAMILY: Readonly<Record<string, ChordExplorerType>> = {
-  power5: 'major',
-  power5_b2: 'major',
-  dyad_b2: 'major',
-  tritone: 'dim',
-  fourth: 'sus4',
-  sus2: 'sus2',
-  sus4: 'sus4',
-  add9: 'major',
-  m_add9: 'minor',
-  '7': '7',
-  m7: 'm7',
-  maj7: 'maj7',
-  quartal: 'sus4',
-  cluster_m2: 'major',
-  cluster_b3: 'minor',
-  phrygian: 'major',
-  major: 'major',
-  minor: 'minor',
-  dim: 'dim',
-  aug: 'aug'
-};
-
-/** Chord-name suffixes that utils/chordExplorer maps back to each type. */
-const EXPLORER_SUFFIX: Readonly<Record<ChordExplorerType, string>> = {
-  major: '',
-  minor: 'm',
-  dim: 'dim',
-  aug: 'aug',
-  '7': '7',
-  m7: 'm7',
-  maj7: 'maj7',
-  dim7: 'dim7',
-  sus2: 'sus2',
-  sus4: 'sus4'
-};
-
-export const explorerTypeForFamily = (familyId: string): ChordExplorerType =>
-  EXPLORER_TYPE_BY_FAMILY[familyId.replace(/^drone_/, '')] ?? 'major';
-
-/** A name/subtext pair that buildChordExplorerUrl maps to the family's closest Chord Explorer type. */
-export const explorerChordFor = (root: string, familyId: string): { name: string; subtext: string } => {
-  const name = `${root}${EXPLORER_SUFFIX[explorerTypeForFamily(familyId)]}`;
-  return { name, subtext: name };
-};
-
-/** Chord Explorer deep link; the exact shape only travels in E Standard, the only tuning Chord Explorer knows. */
 export const finderExplorerUrl = (root: string, familyId: string, voicing: GeneratedVoicing, tuning: Tuning): string =>
-  buildChordExplorerUrl(explorerChordFor(root, familyId), tuning.id === 'e-standard' ? voicing.shape : undefined);
+  buildExplorerUrl({ root, type: explorerTypeForFamily(familyId) }, tuning.id === 'e-standard' ? voicing.shape : undefined);
 
 // ---------------------------------------------------------------------------
 // Empty-state relaxation hints
