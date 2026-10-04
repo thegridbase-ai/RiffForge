@@ -266,10 +266,13 @@ const App: React.FC = () => {
     setIsLoadingChords(true);
     setDisplayedChords([]);
     setChordsToLoad(6);
+    // A quick root/tuning/vibe change must not let an older load overwrite newer cards
+    let cancelled = false;
 
     const loadChords = async () => {
       try {
         const baseChords = await getChords(tuningMode, vibeMode);
+        if (cancelled) return;
 
         if (!baseChords || baseChords.length === 0) {
           setDisplayedChords([]);
@@ -284,12 +287,16 @@ const App: React.FC = () => {
         setDisplayedChords(firstBatch.map((chord: Chord) => resolveLibraryChord(chord, selectedRoot, tuningMode, handProfile)));
         setIsLoadingChords(false);
       } catch {
+        if (cancelled) return;
         setDisplayedChords([]);
         setIsLoadingChords(false);
       }
     };
 
     loadChords();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedRoot, tuningMode, vibeMode, handProfile, setDisplayedChords, setIsLoadingChords, setChordsToLoad, setTotalChordsAvailable]);
 
   const loadMoreChords = useCallback(async () => {
