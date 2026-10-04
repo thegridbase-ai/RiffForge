@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   CURVE_LENGTH,
+  GUITAR_SAMPLE_NOTES,
+  guitarSampleUrl,
+  nearestSampleDistance,
+  onsetSeconds,
   MAX_DRIVE_TRIM_DB,
   chordDriveTrimDb,
   detunedFrequency,
@@ -92,5 +96,22 @@ describe('strum helpers', () => {
     expect(parseAmpModel('modern')).toBe('modern');
     expect(parseAmpModel('vox')).toBe('modern');
     expect(parseAmpModel(null)).toBe('modern');
+  });
+});
+
+describe('guitar samples', () => {
+  it('repitches at most 1.5 semitones up to D6, and 2 up to E6 (24th fret)', () => {
+    for (let midi = 37; midi <= 88; midi++) expect(nearestSampleDistance(midi)).toBeLessThanOrEqual(2);
+    for (let midi = 37; midi <= 86; midi++) expect(nearestSampleDistance(midi)).toBeLessThanOrEqual(1.5);
+    expect(guitarSampleUrl(GUITAR_SAMPLE_NOTES[40])).toBe('/samples/emilyguitar/E2.mp3');
+  });
+
+  it('finds the attack after encoder silence and keeps a 1 ms pre-roll', () => {
+    const data = new Float32Array(4410);
+    for (let i = 1323; i < data.length; i++) data[i] = Math.sin(i / 3) * Math.exp(-(i - 1323) / 800);
+    // Attack at 30 ms
+    expect(onsetSeconds(data, 44100)).toBeCloseTo(0.029, 3);
+    expect(onsetSeconds(new Float32Array(100), 44100)).toBe(0);
+    expect(onsetSeconds([0.5, 0.2], 44100)).toBe(0);
   });
 });

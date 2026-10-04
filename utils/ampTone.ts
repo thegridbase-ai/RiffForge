@@ -83,3 +83,54 @@ export const strumOrder = <T,>(lowToHigh: readonly T[], pick: 'down' | 'up'): T[
 
 /** Frequency in Hz of a MIDI note detuned by `cents`. */
 export const detunedFrequency = (midi: number, cents: number): number => 440 * 2 ** ((midi - 69 + cents / 100) / 12);
+
+// ---------------------------------------------------------------------------
+// Emilyguitar DI samples (CC0, see public/samples/emilyguitar/README.txt)
+// ---------------------------------------------------------------------------
+
+export const GUITAR_SAMPLE_BASE = '/samples/emilyguitar/';
+
+/** MIDI note -> file name: every minor third from Db2 to C6, plus D6 (the recorded pitches). */
+export const GUITAR_SAMPLE_NOTES: Readonly<Record<number, string>> = {
+  37: 'Db2',
+  40: 'E2',
+  42: 'Gb2',
+  45: 'A2',
+  48: 'C3',
+  51: 'Eb3',
+  54: 'Gb3',
+  57: 'A3',
+  60: 'C4',
+  63: 'Eb4',
+  66: 'Gb4',
+  69: 'A4',
+  72: 'C5',
+  75: 'Eb5',
+  78: 'Gb5',
+  81: 'A5',
+  84: 'C6',
+  86: 'D6'
+};
+
+export const GUITAR_DEAD_SAMPLES: readonly string[] = ['dead-2', 'dead-4'];
+
+export const guitarSampleUrl = (name: string): string => `${GUITAR_SAMPLE_BASE}${name}.mp3`;
+
+/** Semitones from `midi` to the nearest recorded pitch: how far the sampler has to repitch it. */
+export const nearestSampleDistance = (midi: number): number =>
+  Math.min(...Object.keys(GUITAR_SAMPLE_NOTES).map((key) => Math.abs(Number(key) - midi)));
+
+/**
+ * Where the attack starts, in seconds: the first sample above `threshold` of the peak, minus `preRoll`. MP3
+ * encoders add a few milliseconds of silence before the audio, and not every browser removes it on decode; the
+ * player trims to this point so palm-muted 16ths stay on the grid.
+ */
+export const onsetSeconds = (data: ArrayLike<number>, sampleRate: number, threshold = 0.05, preRoll = 0.001): number => {
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+  if (peak === 0 || !(sampleRate > 0)) return 0;
+  for (let i = 0; i < data.length; i++) {
+    if (Math.abs(data[i]) >= peak * threshold) return Math.max(0, i / sampleRate - preRoll);
+  }
+  return 0;
+};

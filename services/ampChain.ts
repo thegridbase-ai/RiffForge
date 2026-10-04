@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { saturationCurve } from '../utils/ampTone';
+import { GUITAR_DEAD_SAMPLES, GUITAR_SAMPLE_NOTES, guitarSampleUrl, onsetSeconds, saturationCurve } from '../utils/ampTone';
 
 /**
  * The "New" amp model: a two-stage high-gain preamp, a tone stack, a soft power stage and a speaker-cabinet
@@ -8,6 +8,8 @@ import { saturationCurve } from '../utils/ampTone';
  */
 export interface ModernAmp {
   input: Tone.Gain;
+  /** How long the current channel delays the sound (waveshaper oversampling); clicks wait this long too. */
+  latencySec: () => number;
   /** Clean or drive path; ramps over a few ms so switching mid-note does not click. */
   setChannel: (distorted: boolean) => void;
   /** Chord-aware drive: pre-gain trim in dB for the hit starting at `time`. */
@@ -17,6 +19,13 @@ export interface ModernAmp {
 
 const CHANNEL_RAMP_SEC = 0.05;
 const TRIM_TIME_CONSTANT = 0.004;
+/**
+ * Oversampling filters delay the signal: measured with an impulse in Chrome, 4x = 4.35 ms and 2x = 2.9 ms per
+ * waveshaper (WebKit shares the resampler). The drive path uses 4x on stage A, where aliasing is worst, 2x on
+ * stage B and none on the gentle power stage: 7.25 ms in total. A compressor would add a fixed 6 ms lookahead,
+ * so the clean path has none.
+ */
+export const DRIVE_LATENCY_SEC = 0.00725;
 
 export const createModernAmp = (output: Tone.InputNode): ModernAmp => {
   const input = new Tone.Gain(1);
@@ -40,21 +49,19 @@ export const createModernAmp = (output: Tone.InputNode): ModernAmp => {
   // Stage B: symmetric clipping
   const stageBGain = new Tone.Gain(3);
   const stageB = new Tone.WaveShaper(saturationCurve(5));
-  stageB.oversample = '4x';
+  stageB.oversample = '2x';
 
   // Tone stack: a little bass, scooped low mids, presence
   const bass = new Tone.Filter({ type: 'lowshelf', frequency: 100, gain: 3 });
   const mids = new Tone.Filter({ type: 'peaking', frequency: 650, Q: 0.7, gain: -5 });
   const presence = new Tone.Filter({ type: 'peaking', frequency: 3500, Q: 0.9, gain: 4 });
 
-  // Power stage: gentle extra compression
+  // Power stage: gentle extra compression (soft enough to run without oversampling)
   const powerGain = new Tone.Gain(1.5);
   const power = new Tone.WaveShaper(saturationCurve(1.5));
-  power.oversample = '2x';
-  const driveLevel = new Tone.Gain(Tone.dbToGain(-6.5));
+  const driveLevel = new Tone.Gain(Tone.dbToGain(-8));
 
-  // Clean path: light compression so chords and single notes sit together
-  const cleanCompressor = new Tone.Compressor({ threshold: -20, ratio: 3, attack: 0.005, release: 0.15 });
+  // Clean path: straight into the cabinet
   const cleanLevel = new Tone.Gain(Tone.dbToGain(14.5));
 
   // Speaker cabinet (a 4x12 with a dynamic mic, as a filter): no sub rumble, a 2.5 kHz bite, no fizz above 5 kHz
@@ -86,18 +93,22 @@ export const createModernAmp = (output: Tone.InputNode): ModernAmp => {
     driveLevel,
     cabHighpass
   );
-  cleanSend.chain(cleanCompressor, cleanLevel, cabHighpass);
+  cleanSend.chain(cleanLevel, cabHighpass);
   cabHighpass.chain(cabPeak, cabLowpass, postHighpass, room, level, output);
 
   const nodes: Tone.ToneAudioNode[] = [
     input, driveSend, cleanSend, preHighpass, preMid, preLowpass, driveTrim, stageAGain, stageA, dcBlock, interstage,
-    stageBGain, stageB, bass, mids, presence, powerGain, power, driveLevel, cleanCompressor, cleanLevel, cabHighpass,
+    stageBGain, stageB, bass, mids, presence, powerGain, power, driveLevel, cleanLevel, cabHighpass,
     cabPeak, cabLowpass, postHighpass, room, level
   ];
 
+  let distortedNow = false;
+
   return {
     input,
+    latencySec: () => (distortedNow ? DRIVE_LATENCY_SEC : 0),
     setChannel: (distorted) => {
+      distortedNow = distorted;
       driveSend.gain.rampTo(distorted ? 1 : 0, CHANNEL_RAMP_SEC);
       cleanSend.gain.rampTo(distorted ? 0 : 1, CHANNEL_RAMP_SEC);
       room.wet.rampTo(distorted ? 0.08 : 0.14, CHANNEL_RAMP_SEC);
@@ -109,25 +120,37 @@ export const createModernAmp = (output: Tone.InputNode): ModernAmp => {
   };
 };
 
+/** What the engine needs from a note source: Tone.PolySynth and Tone.Sampler both fit. */
+export interface NoteVoice {
+  triggerAttackRelease: (note: Tone.Unit.Frequency, duration: Tone.Unit.Time, time?: Tone.Unit.Time, velocity?: number) => unknown;
+  releaseAll: (time?: Tone.Unit.Time) => unknown;
+}
+
 /**
- * Sources for the New model. Open hits get a pluck-like filter sweep; palm mutes a low-passed thump (700 to
- * 300 Hz in 60 ms) with a 120 ms decay and no sustain, so they ring for the whole grid step without smearing;
- * dead notes are a 20 ms band-passed noise click instead of pitched notes.
+ * Sources for the New model: chord (played cards and the RiffBar), open and palm-muted rhythm hits, and dead
+ * notes. Palm mutes get a low-passed thump (700 to 300 Hz in 60 ms) that dies within about 120 ms, so they ring
+ * for the grid step without smearing.
  */
 export interface ModernVoices {
-  chord: Tone.PolySynth<Tone.MonoSynth>;
-  open: Tone.PolySynth<Tone.MonoSynth>;
-  mute: Tone.PolySynth<Tone.MonoSynth>;
-  dead: Tone.NoiseSynth;
+  kind: 'synth' | 'samples';
+  chord: NoteVoice;
+  open: NoteVoice;
+  mute: NoteVoice;
+  /** Palm-mute filter sweep for a hit at `time` (sample voices share one filter; synth voices have their own). */
+  muteSweep: (time: number) => void;
+  /** Longest a palm-muted note is held before its release. */
+  muteHoldSec: number;
+  dead: (time: number, velocity: number) => void;
   releaseAll: (time?: Tone.Unit.Time) => void;
   dispose: () => void;
 }
 
 const SAW = { type: 'sawtooth' as const };
 
+/** Synth voices: used until the guitar samples have loaded, or when they cannot load (offline). */
 export const createModernVoices = (amp: ModernAmp): ModernVoices => {
   const chord = new Tone.PolySynth(Tone.MonoSynth, {
-    volume: -11,
+    volume: -10,
     oscillator: SAW,
     filter: { type: 'lowpass', rolloff: -24, Q: 0.8 },
     filterEnvelope: { attack: 0.003, decay: 0.6, sustain: 0.3, release: 0.8, baseFrequency: 700, octaves: 2.6 },
@@ -154,24 +177,92 @@ export const createModernVoices = (amp: ModernAmp): ModernVoices => {
   mute.maxPolyphony = 48;
 
   const deadFilter = new Tone.Filter({ type: 'bandpass', frequency: 1800, Q: 1 }).connect(amp.input);
-  const dead = new Tone.NoiseSynth({
+  const noise = new Tone.NoiseSynth({
     volume: -10,
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.02, sustain: 0, release: 0.01 }
   }).connect(deadFilter);
 
   return {
+    kind: 'synth',
     chord,
     open,
     mute,
-    dead,
+    muteSweep: () => undefined,
+    muteHoldSec: Infinity,
+    dead: (time, velocity) => noise.triggerAttackRelease(0.02, time, velocity),
     releaseAll: (time) => {
       chord.releaseAll(time);
       open.releaseAll(time);
       mute.releaseAll(time);
     },
     dispose: () => {
-      [chord, open, mute, dead, deadFilter].forEach((node) => node.dispose());
+      [chord, open, mute, noise, deadFilter].forEach((node) => node.dispose());
+    }
+  };
+};
+
+/** Decoded Emilyguitar DI samples, trimmed to their attack. */
+export interface GuitarSamples {
+  notes: Map<number, Tone.ToneAudioBuffer>;
+  dead: Tone.ToneAudioBuffer[];
+}
+
+const trimToAttack = (buffer: Tone.ToneAudioBuffer): Tone.ToneAudioBuffer => {
+  const start = onsetSeconds(buffer.getChannelData(0), buffer.sampleRate);
+  return start > 0 ? buffer.slice(start) : buffer;
+};
+
+/** Downloads and decodes the CC0 Emilyguitar samples (about 600 KB). Rejects when any file fails. */
+export const loadGuitarSamples = async (): Promise<GuitarSamples> => {
+  const notes = await Promise.all(
+    Object.entries(GUITAR_SAMPLE_NOTES).map(async ([midi, name]) => {
+      const buffer = await Tone.ToneAudioBuffer.fromUrl(guitarSampleUrl(name));
+      return [Number(midi), trimToAttack(buffer)] as const;
+    })
+  );
+  const dead = await Promise.all(GUITAR_DEAD_SAMPLES.map(async (name) => trimToAttack(await Tone.ToneAudioBuffer.fromUrl(guitarSampleUrl(name)))));
+  return { notes: new Map(notes), dead };
+};
+
+const PALM_MUTE_HOLD_SEC = 0.12;
+
+/**
+ * Sample voices: real DI strings into the amp, repitched from the nearest recorded note. Palm mutes run through
+ * one shared low-pass whose cutoff sweeps 700 to 300 Hz on every muted hit; dead notes are recorded muted-string
+ * hits, alternating between two takes.
+ */
+export const createSampleVoices = (amp: ModernAmp, samples: GuitarSamples): ModernVoices => {
+  const urls = Object.fromEntries([...samples.notes].map(([midi, buffer]) => [midi, buffer]));
+  const chord = new Tone.Sampler({ urls, release: 0.6, volume: 0 }).connect(amp.input);
+  const open = new Tone.Sampler({ urls, release: 0.08, volume: -4.5 }).connect(amp.input);
+
+  const muteFilter = new Tone.Filter({ type: 'lowpass', frequency: 300, Q: 1, rolloff: -24 }).connect(amp.input);
+  const sweep = new Tone.FrequencyEnvelope({ attack: 0.001, decay: 0.06, sustain: 0, release: 0.05, baseFrequency: 300, octaves: Math.log2(700 / 300) });
+  sweep.connect(muteFilter.frequency);
+  const mute = new Tone.Sampler({ urls, release: 0.04, volume: -2.5 }).connect(muteFilter);
+
+  const deadGain = new Tone.Gain(Tone.dbToGain(-4)).connect(amp.input);
+  const deadPlayers = samples.dead.map((buffer) => new Tone.Player(buffer).connect(deadGain));
+  let deadCount = 0;
+
+  return {
+    kind: 'samples',
+    chord,
+    open,
+    mute,
+    muteSweep: (time) => sweep.triggerAttackRelease(0.06, time),
+    muteHoldSec: PALM_MUTE_HOLD_SEC,
+    dead: (time) => {
+      deadPlayers[deadCount++ % Math.max(1, deadPlayers.length)]?.start(time);
+    },
+    releaseAll: (time) => {
+      chord.releaseAll(time);
+      open.releaseAll(time);
+      mute.releaseAll(time);
+    },
+    dispose: () => {
+      [chord, open, mute, muteFilter, sweep, deadGain, ...deadPlayers].forEach((node) => node.dispose());
     }
   };
 };

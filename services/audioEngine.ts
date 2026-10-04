@@ -2,7 +2,15 @@ import * as Tone from 'tone';
 import type { PlaybackEvent } from '../engine/types';
 import { midiToName } from '../engine/pitch';
 import { PALM_MUTE_DURATION_FACTOR } from '../engine/rhythm/playback';
-import { createModernAmp, createModernVoices, type ModernAmp, type ModernVoices } from './ampChain';
+import {
+  createModernAmp,
+  createModernVoices,
+  createSampleVoices,
+  loadGuitarSamples,
+  type ModernAmp,
+  type ModernVoices,
+  type NoteVoice
+} from './ampChain';
 import {
   DEFAULT_AMP_MODEL,
   chordDriveTrimDb,
@@ -61,6 +69,7 @@ class AudioEngine {
   private distorted = false;
   private modernAmp: ModernAmp | null = null;
   private modernVoices: ModernVoices | null = null;
+  private samplesRequested = false;
   private strumCount = 0;
 
   constructor() {
@@ -135,7 +144,37 @@ class AudioEngine {
     this.modernVoices = createModernVoices(this.modernAmp);
     this.modernAmp.setChannel(this.distorted);
 
+    // iOS: play through the silent switch like a music app
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = 'playback';
+
     this.initialized = true;
+    this.requestGuitarSamples();
+  }
+
+  /**
+   * The New model starts on synth voices and swaps to the Emilyguitar DI samples once they have loaded. Only
+   * downloads when the New model is selected; on failure (offline) the synth voices stay.
+   */
+  private requestGuitarSamples() {
+    if (this.samplesRequested || !this.initialized || this.ampModel !== 'modern') return;
+    this.samplesRequested = true;
+    loadGuitarSamples()
+      .then((samples) => {
+        if (!this.modernAmp) return;
+        const previous = this.modernVoices;
+        this.modernVoices = createSampleVoices(this.modernAmp, samples);
+        // Let notes already playing on the synth voices finish before they go
+        window.setTimeout(() => previous?.dispose(), 3000);
+      })
+      .catch(() => {
+        this.samplesRequested = false;
+      });
+  }
+
+  /** 'samples' once the DI samples play, 'synth' before that (or when they could not load). */
+  public getGuitarSource(): ModernVoices['kind'] | null {
+    return this.modernVoices?.kind ?? null;
   }
 
   /** Classic (the original synth + distortion) or the New amp chain. Works before init. */
@@ -146,10 +185,16 @@ class AudioEngine {
     this.synth?.releaseAll();
     this.rhythmSynth?.releaseAll();
     this.modernVoices?.releaseAll();
+    this.requestGuitarSamples();
   }
 
   public getAmpModel(): AmpModel {
     return this.ampModel;
+  }
+
+  /** The click bypasses the amp: delay it by the amp's latency so it lines up with the guitar. */
+  private clickDelay(): number {
+    return this.modern()?.amp.latencySec() ?? 0;
   }
 
   private modern(): { amp: ModernAmp; voices: ModernVoices } | null {
@@ -158,7 +203,7 @@ class AudioEngine {
 
   /** New model: one hit, strings in pick order with repeatable humanize, drive trimmed for the chord. */
   private strumModern(
-    voice: Tone.PolySynth<Tone.MonoSynth>,
+    voice: NoteVoice,
     amp: ModernAmp,
     midi: readonly number[],
     opts: { time: number; duration: Tone.Unit.Time; velocity: number; spread: number; hit: number; pick: 'down' | 'up' }
@@ -264,7 +309,7 @@ class AudioEngine {
         this.clickSynth.triggerAttackRelease(
           beatInBar === 0 ? 'C5' : 'G4',
           '32n',
-          time,
+          time + this.clickDelay(),
           beatInBar === 0 ? 1 : 0.55
         );
       }
@@ -372,7 +417,7 @@ class AudioEngine {
 
     const clickPart = new Tone.Part<{ time: number; strong: boolean }>((time, value) => {
       if (!this.rhythmMetronome || !this.clickSynth) return;
-      this.clickSynth.triggerAttackRelease(value.strong ? 'C5' : 'G4', '32n', time, value.strong ? 1 : 0.55);
+      this.clickSynth.triggerAttackRelease(value.strong ? 'C5' : 'G4', '32n', time + this.clickDelay(), value.strong ? 1 : 0.55);
     }, opts.clickTimes.map((click) => ({ time: click.timeSec, strong: click.strong })));
 
     this.rhythmParts = [notePart, clickPart];
@@ -420,13 +465,15 @@ class AudioEngine {
     };
   }
 
-  /** New model rhythm hit: dead notes are a noise click, palm mutes ring the whole step through the mute voice. */
+  /** New model rhythm hit: dead notes use the dead sound, palm mutes ring the step (up to the voice hold) with a filter sweep. */
   private playModernHit(modern: { amp: ModernAmp; voices: ModernVoices }, event: PlaybackEvent, index: number, time: number) {
     if (event.kind === 'dead') {
-      modern.voices.dead.triggerAttackRelease(0.02, time, event.velocity);
+      modern.voices.dead(time, event.velocity);
       return;
     }
-    const duration = Math.max(0.01, event.palmMute ? event.durationSec / PALM_MUTE_DURATION_FACTOR : event.durationSec);
+    const step = event.palmMute ? Math.min(event.durationSec / PALM_MUTE_DURATION_FACTOR, modern.voices.muteHoldSec) : event.durationSec;
+    const duration = Math.max(0.01, step);
+    if (event.palmMute) modern.voices.muteSweep(time);
     this.strumModern(event.palmMute ? modern.voices.mute : modern.voices.open, modern.amp, event.midi, {
       time,
       duration,

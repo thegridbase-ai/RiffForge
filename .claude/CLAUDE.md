@@ -61,8 +61,11 @@ Context-aware sonic prototyping tool for metal guitarists. Lets users explore ch
 - Two amp models, A/B from the header ("Amp: Classic / New", `ampModel` in chordStore, `riffforge:amp:v1`):
   - Classic: PolySynth -> Distortion (wet/dry) -> Reverb (decay:4, wet:0.3) -> Limiter(-1dB), 30 ms strum
   - New (default, `services/ampChain.ts`): pre-EQ -> two waveshaper gain stages -> tone stack -> power stage ->
-    cab filter -> small room -> Limiter. Palm-mute / open / chord voices, noise dead notes, chord-aware drive and
-    seeded humanize (`utils/ampTone.ts`). Output levels are matched to Classic within ~1 dB RMS (offline render).
+    cab filter -> small room -> Limiter. Chord-aware drive and seeded humanize (`utils/ampTone.ts`). Output levels
+    are matched to Classic within ~1-2 dB RMS (offline render). Drive path latency 7.25 ms (oversampling); the
+    metronome click is delayed by the same amount.
+  - New plays CC0 Karoryfer Emilyguitar DI samples (`public/samples/emilyguitar/`, ~550 KB, README + LICENSE there),
+    lazy-loaded on first audio init with New selected; synth voices play until they load or if loading fails.
 - Singleton export: `audioEngine` instance
 
 ### Lock & Related Chords
