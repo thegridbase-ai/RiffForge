@@ -57,9 +57,8 @@ interface ChordStore {
   tuningMode: TuningMode;
   vibeMode: VibeMode;
 
-  // Lock state
+  // Lock state (the in-key companions are derived from the locked card in App)
   lockedChordId: string | null;
-  relatedChords: Chord[];
 
   // Loading state
   displayedChords: Chord[];
@@ -80,7 +79,6 @@ interface ChordStore {
   setTuningMode: (mode: TuningMode) => void;
   setVibeMode: (mode: VibeMode) => void;
   setLockedChordId: (id: string | null) => void;
-  setRelatedChords: (chords: Chord[]) => void;
   setDisplayedChords: (chords: Chord[]) => void;
   setIsLoadingChords: (value: boolean) => void;
   setChordsToLoad: (count: number) => void;
@@ -103,7 +101,6 @@ export const useChordStore = create<ChordStore>((set) => ({
   tuningMode: urlState.tuning ?? TuningMode.STANDARD,
   vibeMode: urlState.vibe ?? VibeMode.MELODIC,
   lockedChordId: null,
-  relatedChords: [],
   displayedChords: [],
   isLoadingChords: false,
   chordsToLoad: 6,
@@ -124,7 +121,6 @@ export const useChordStore = create<ChordStore>((set) => ({
   setTuningMode: (mode) => set({ tuningMode: mode }),
   setVibeMode: (mode) => set({ vibeMode: mode }),
   setLockedChordId: (id) => set({ lockedChordId: id }),
-  setRelatedChords: (chords) => set({ relatedChords: chords }),
   setDisplayedChords: (chords) => set({ displayedChords: chords }),
   setIsLoadingChords: (value) => set({ isLoadingChords: value }),
   setChordsToLoad: (count) => set({ chordsToLoad: count }),
@@ -140,8 +136,7 @@ export const useChordStore = create<ChordStore>((set) => ({
 
   // Compound actions
   resetLockState: () => set({
-    lockedChordId: null,
-    relatedChords: []
+    lockedChordId: null
   }),
   incrementChordsToLoad: (amount) => set((state) => ({
     chordsToLoad: state.chordsToLoad + amount

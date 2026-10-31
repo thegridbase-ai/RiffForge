@@ -14,10 +14,10 @@ import { resolveLibraryChord, tuningForMode } from './utils/libraryVoicing';
 import { handProfileHash } from './engine/handProfile';
 import { useHandProfileStore } from './stores/handProfileStore';
 import { parseUrlState, syncUrlState, type AppView } from './utils/urlState';
+import { fittingKeys, intervalsAbove, keyCompanions, KEY_MODES, type KeyModeId } from './utils/keyCompanions';
 import { getChords } from './constants';
 
 const CHORDS_PER_BATCH = 6;
-const RELATED_CHORDS_COUNT = 6;
 
 const loadVoicingFinder = () => import('./components/VoicingFinder');
 const loadHandProfilePanel = () => import('./components/HandProfilePanel');
@@ -91,6 +91,47 @@ const ViewSwitch: React.FC<ViewSwitchProps> = ({ view, onChange, isDistorted, sh
   );
 };
 
+interface KeySwitchProps {
+  tonic: string;
+  options: KeyModeId[];
+  value: KeyModeId;
+  onChange: (key: KeyModeId) => void;
+  isDistorted: boolean;
+}
+
+/** The keys that hold the locked chord; the companions below follow the pick. */
+const KeySwitch: React.FC<KeySwitchProps> = ({ tonic, options, value, onChange, isDistorted }) => {
+  const active = isDistorted
+    ? 'bg-rose-500/20 border-rose-500/60 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.25)]'
+    : 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.25)]';
+  const ring = isDistorted ? 'focus-visible:ring-rose-500' : 'focus-visible:ring-cyan-500';
+  return (
+    <div role="group" aria-label="Key" className="flex flex-wrap items-center justify-center gap-2">
+      <span className="text-[10px] font-mono text-neutral-400 uppercase" aria-hidden="true">
+        Key
+      </span>
+      <div className="flex flex-wrap justify-center gap-1 rounded-3xl border border-white/10 bg-neutral-900/60 p-0.5">
+        {options.map((option) => {
+          const pressed = option === value;
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={pressed}
+              onClick={() => onChange(option)}
+              className={`min-h-[44px] md:min-h-0 md:h-7 px-3 rounded-full border font-mono text-[10px] uppercase tracking-widest transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 ${ring} ${
+                pressed ? active : 'border-transparent text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              {tonic} {KEY_MODES[option].label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const {
     isDistorted,
@@ -102,7 +143,6 @@ const App: React.FC = () => {
     tuningMode,
     vibeMode,
     lockedChordId,
-    relatedChords,
     displayedChords,
     isLoadingChords,
     chordsToLoad,
@@ -118,7 +158,6 @@ const App: React.FC = () => {
     setTuningMode,
     setVibeMode,
     setLockedChordId,
-    setRelatedChords,
     setDisplayedChords,
     setIsLoadingChords,
     setChordsToLoad,
@@ -128,6 +167,7 @@ const App: React.FC = () => {
   } = useChordStore();
 
   const relatedSectionRef = useRef<HTMLElement>(null);
+  const [keyChoice, setKeyChoice] = useState<KeyModeId | null>(null);
   const [favoriteChords, setFavoriteChords] = useState<Chord[]>([]);
   const storedProfile = useHandProfileStore((state) => state.profile);
   // Cards depend only on the fretting-hand fields: a tempo change must not reload the grid
@@ -238,33 +278,18 @@ const App: React.FC = () => {
   const handleLockToggle = useCallback(async (chord: Chord) => {
     if (lockedChordId === chord.id) {
       setLockedChordId(null);
-      setRelatedChords([]);
-    } else {
-      await playChord(chord);
-      setLockedChordId(chord.id);
-
-      const baseChords = await getChords(tuningMode, vibeMode);
-
-      // Ids are stable across roots, so the displayed id is the base id
-      const originalParent = baseChords.find((p: Chord) => p.id === chord.id);
-
-      if (originalParent && originalParent.relatedChords && originalParent.relatedChords.length > 0) {
-        const resolvedRelated = originalParent.relatedChords
-          .slice(0, RELATED_CHORDS_COUNT)
-          .map((relatedChord: Chord) => resolveLibraryChord(relatedChord, selectedRoot, tuningMode, handProfile));
-        setRelatedChords(resolvedRelated);
-
-        setTimeout(() => {
-          relatedSectionRef.current?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
-          });
-        }, 350);
-      } else {
-        setRelatedChords([]);
-      }
+      return;
     }
-  }, [lockedChordId, playChord, selectedRoot, tuningMode, vibeMode, handProfile, setLockedChordId, setRelatedChords]);
+    await playChord(chord);
+    setLockedChordId(chord.id);
+    setKeyChoice(null);
+    setTimeout(() => {
+      relatedSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }, 350);
+  }, [lockedChordId, playChord, setLockedChordId]);
 
   const isChordLocked = useCallback((chord: Chord) => {
     if (!lockedChordId) return false;
@@ -337,6 +362,31 @@ const App: React.FC = () => {
   }, [chordsToLoad, tuningMode, vibeMode, selectedRoot, handProfile, isLoadingChords, displayedChords, setDisplayedChords, setIsLoadingChords, incrementChordsToLoad]);
 
   const gridChords = showFavoritesOnly ? favoriteChords : displayedChords;
+
+  // The locked card is the tonic of the selected root; its companions are the other degrees of a key that holds it.
+  // Derived, so a root, tuning or hand-profile change re-voices them.
+  const lockedChord = useMemo(
+    () => (lockedChordId ? gridChords.find((c) => c.id === lockedChordId) ?? null : null),
+    [gridChords, lockedChordId]
+  );
+  const lockedIntervals = useMemo(
+    () => (lockedChord ? intervalsAbove(lockedChord.notes, selectedRoot) : []),
+    [lockedChord, selectedRoot]
+  );
+  const keyOptions = useMemo(
+    () => (lockedChord ? fittingKeys(lockedIntervals, vibeMode) : []),
+    [lockedChord, lockedIntervals, vibeMode]
+  );
+  const activeKey = keyChoice && keyOptions.includes(keyChoice) ? keyChoice : keyOptions[0];
+  const companionChords = useMemo(
+    () =>
+      lockedChord && activeKey
+        ? keyCompanions(selectedRoot, lockedIntervals, activeKey, tuning.openMidi[0]).map((chord) =>
+            resolveLibraryChord(chord, chord.baseRoot, tuningMode, handProfile)
+          )
+        : [],
+    [lockedChord, lockedIntervals, activeKey, selectedRoot, tuning, tuningMode, handProfile]
+  );
 
   return (
     <motion.div
@@ -627,7 +677,7 @@ const App: React.FC = () => {
         </main>
 
         <AnimatePresence>
-          {relatedChords.length > 0 && lockedChordId && (
+          {companionChords.length > 0 && lockedChord && activeKey && (
             <motion.section
               ref={relatedSectionRef}
               initial={{ opacity: 0, height: 0 }}
@@ -636,57 +686,58 @@ const App: React.FC = () => {
               transition={{ duration: 0.3 }}
               className="mb-12 scroll-mt-4"
             >
-              {(() => {
-                const lockedChord = gridChords.find(c => c.id === lockedChordId);
-                return (
-                  <div className="flex flex-col items-center gap-3 mb-6">
-                    <div className="flex items-center gap-4 w-full">
-                      <div className={`h-px flex-1 ${isDistorted ? 'bg-rose-500/30' : 'bg-cyan-500/30'}`} />
-                      <h3 className={`font-['Share_Tech_Mono'] text-sm uppercase tracking-widest ${isDistorted ? 'text-rose-400' : 'text-cyan-400'}`}>
-                        Related Variations
-                      </h3>
-                      <div className={`h-px flex-1 ${isDistorted ? 'bg-rose-500/30' : 'bg-cyan-500/30'}`} />
-                    </div>
+              <div className="flex flex-col items-center gap-3 mb-6">
+                <div className="flex items-center gap-4 w-full">
+                  <div className={`h-px flex-1 ${isDistorted ? 'bg-rose-500/30' : 'bg-cyan-500/30'}`} />
+                  <h3 className={`font-['Share_Tech_Mono'] text-sm uppercase tracking-widest ${isDistorted ? 'text-rose-400' : 'text-cyan-400'}`}>
+                    Fits With
+                  </h3>
+                  <div className={`h-px flex-1 ${isDistorted ? 'bg-rose-500/30' : 'bg-cyan-500/30'}`} />
+                </div>
 
-                    {lockedChord && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className={`flex items-center gap-3 px-4 py-2 rounded-lg border backdrop-blur-sm ${
-                          isDistorted
-                            ? 'bg-rose-500/10 border-rose-500/30'
-                            : 'bg-cyan-500/10 border-cyan-500/30'
-                        }`}
-                      >
-                        <span className={`font-['Oswald'] text-2xl font-bold ${
-                          isDistorted ? 'text-rose-400' : 'text-cyan-400'
-                        }`}>
-                          {selectedRoot}
-                        </span>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className={`flex items-center gap-3 px-4 py-2 rounded-lg border backdrop-blur-sm ${
+                    isDistorted
+                      ? 'bg-rose-500/10 border-rose-500/30'
+                      : 'bg-cyan-500/10 border-cyan-500/30'
+                  }`}
+                >
+                  <span className={`font-['Oswald'] text-2xl font-bold ${
+                    isDistorted ? 'text-rose-400' : 'text-cyan-400'
+                  }`}>
+                    {selectedRoot}
+                  </span>
 
-                        <div className={`w-px h-6 ${isDistorted ? 'bg-rose-500/40' : 'bg-cyan-500/40'}`} />
+                  <div className={`w-px h-6 ${isDistorted ? 'bg-rose-500/40' : 'bg-cyan-500/40'}`} />
 
-                        <span className="font-['Oswald'] text-lg text-neutral-200 tracking-wide">
-                          {lockedChord.name}
-                        </span>
+                  <span className="font-['Oswald'] text-lg text-neutral-200 tracking-wide">
+                    {lockedChord.name}
+                  </span>
 
-                        <motion.div
-                          className={`w-2 h-2 rounded-full ${isDistorted ? 'bg-rose-500' : 'bg-cyan-500'}`}
-                          animate={{
-                            boxShadow: isDistorted
-                              ? ['0 0 8px rgba(244, 63, 94, 0.8)', '0 0 16px rgba(244, 63, 94, 0.4)', '0 0 8px rgba(244, 63, 94, 0.8)']
-                              : ['0 0 8px rgba(34, 211, 238, 0.8)', '0 0 16px rgba(34, 211, 238, 0.4)', '0 0 8px rgba(34, 211, 238, 0.8)']
-                          }}
-                          transition={{ duration: 2, repeat: Infinity }}
-                        />
-                      </motion.div>
-                    )}
-                  </div>
-                );
-              })()}
+                  <motion.div
+                    className={`w-2 h-2 rounded-full ${isDistorted ? 'bg-rose-500' : 'bg-cyan-500'}`}
+                    animate={{
+                      boxShadow: isDistorted
+                        ? ['0 0 8px rgba(244, 63, 94, 0.8)', '0 0 16px rgba(244, 63, 94, 0.4)', '0 0 8px rgba(244, 63, 94, 0.8)']
+                        : ['0 0 8px rgba(34, 211, 238, 0.8)', '0 0 16px rgba(34, 211, 238, 0.4)', '0 0 8px rgba(34, 211, 238, 0.8)']
+                    }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  />
+                </motion.div>
+
+                <KeySwitch
+                  tonic={selectedRoot}
+                  options={keyOptions}
+                  value={activeKey}
+                  onChange={setKeyChoice}
+                  isDistorted={isDistorted}
+                />
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {relatedChords.map((chord, index) => (
+                {companionChords.map((chord, index) => (
                   <motion.div
                     key={`related-${chord.id}`}
                     initial={{ opacity: 0, y: 20 }}

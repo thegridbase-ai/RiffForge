@@ -68,11 +68,14 @@ Context-aware sonic prototyping tool for metal guitarists. Lets users explore ch
     lazy-loaded on first audio init with New selected; synth voices play until they load or if loading fails.
 - Singleton export: `audioEngine` instance
 
-### Lock & Related Chords
-- Clicking lock icon on a chord reveals its `relatedChords` in a separate grid section
-- Only one chord can be locked at a time
-- Related section auto-scrolls into view
-- Lock state resets when tuning or vibe changes
+### Lock & "Fits With" (in-key companions)
+- Clicking the lock icon treats that card as the tonic of the selected root and shows the other six degrees of a key
+  that holds its sounding notes (`utils/keyCompanions.ts`), resolved through `resolveLibraryChord` on each companion's own root
+- Key options (max 4) are the modes that hold the chord, ordered by vibe (Dark: Phrygian first; Melodic/Energetic: Minor first);
+  a KEY switch in the section picks between them
+- Companions keep the locked chord's color (power, sus2, sus4, add9, seventh) where it stays in key, else the diatonic triad
+- Derived in App (not stored), so it follows root, tuning and hand-profile changes; the JSON `relatedChords` are no longer shown
+- Only one chord can be locked at a time; the section auto-scrolls into view; lock resets when tuning or vibe changes
 
 ## Design Language
 
